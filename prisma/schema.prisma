@@ -42,13 +42,13 @@ enum NivelEvento {
 }
 
 model Usuario {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
+  id        Int        @id @default(autoincrement())
+  email     String     @unique
   nome      String
-  senhaHash String    @map("senha_hash")
-  papel     Papel     @default(OPERADOR)
-  ativo     Boolean   @default(true)
-  criadoEm  DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  senhaHash String     @map("senha_hash")
+  papel     Papel      @default(OPERADOR)
+  ativo     Boolean    @default(true)
+  criadoEm  DateTime   @default(now()) @map("criado_em") @db.Timestamptz(3)
   sessoes   Sessao[]
   disparos  Disparo[]
   eventos   Evento[]
@@ -70,18 +70,19 @@ model Sessao {
 }
 
 model Aparelho {
-  id              Int       @id @default(autoincrement())
-  nome            String    @unique
+  id              Int        @id @default(autoincrement())
+  nome            String     @unique
   url             String
   usuario         String
-  senhaCifrada    String    @map("senha_cifrada")
-  ativo           Boolean   @default(true)
-  online          Boolean   @default(false)
+  senhaCifrada    String     @map("senha_cifrada")
+  ativo           Boolean    @default(true)
+  online          Boolean    @default(false)
   bateria         Int?
   detalhe         String?
-  ultimoContatoEm DateTime? @map("ultimo_contato_em") @db.Timestamptz(3)
-  criadoEm        DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  ultimoContatoEm DateTime?  @map("ultimo_contato_em") @db.Timestamptz(3)
+  criadoEm        DateTime   @default(now()) @map("criado_em") @db.Timestamptz(3)
   chips           Chip[]
+  respostas       Resposta[]
 
   @@map("aparelhos")
 }
@@ -101,6 +102,7 @@ model Chip {
   criadoEm       DateTime   @default(now()) @map("criado_em") @db.Timestamptz(3)
   mensagens      Mensagem[]
   eventos        Evento[]
+  respostas      Resposta[]
 
   @@unique([aparelhoId, simNumero])
   @@map("chips")
@@ -124,6 +126,7 @@ model Disparo {
   terminadoEm    DateTime?     @map("terminado_em") @db.Timestamptz(3)
   mensagens      Mensagem[]
   eventos        Evento[]
+  respostas      Resposta[]
 
   @@index([criadoPorId])
   @@index([timeId])
@@ -160,7 +163,8 @@ model Mensagem {
   criadoEm           DateTime       @default(now()) @map("criado_em") @db.Timestamptz(3)
   atualizadoEm       DateTime       @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
 
-  avisos             Aviso[]
+  avisos    Aviso[]
+  respostas Resposta[]
 
   @@unique([timeId, chaveIdempotencia])
   @@index([status, proximaTentativaEm])
@@ -211,6 +215,7 @@ model Time {
   disparos     Disparo[]
   mensagens    Mensagem[]
   avisos       Aviso[]
+  respostas    Resposta[]
 
   @@map("times")
 }
@@ -251,6 +256,9 @@ model Aviso {
   timeId             Int           @map("time_id")
   time               Time          @relation(fields: [timeId], references: [id])
   statusMensagem     String        @map("status_mensagem")
+  /// Preenchido quando o aviso é de resposta do contato (evento mensagem.respondida).
+  respostaId         Int?          @map("resposta_id")
+  resposta           Resposta?     @relation(fields: [respostaId], references: [id])
   status             StatusEntrega @default(PENDENTE)
   tentativas         Int           @default(0)
   proximaTentativaEm DateTime      @default(now()) @map("proxima_tentativa_em") @db.Timestamptz(3)
@@ -261,6 +269,7 @@ model Aviso {
   @@index([status, proximaTentativaEm])
   @@index([mensagemId])
   @@index([timeId])
+  @@index([respostaId])
   @@map("avisos")
 }
 
@@ -276,9 +285,41 @@ model TentativaLogin {
 
 /// Batida do worker: o painel e o /health mostram se o envio está vivo.
 model BatidaWorker {
-  id       String   @id
-  ultimaEm DateTime @map("ultima_em") @db.Timestamptz(3)
-  foraDaJanela Boolean @default(false) @map("fora_da_janela")
+  id           String   @id
+  ultimaEm     DateTime @map("ultima_em") @db.Timestamptz(3)
+  foraDaJanela Boolean  @default(false) @map("fora_da_janela")
 
   @@map("batidas_worker")
+}
+
+/// SMS que o contato mandou de volta para um chip, lido do celular (GET /inbox do sms-gate).
+/// Ligado à última mensagem enviada para aquele telefone nos 7 dias anteriores; sem mensagem, fica avulso.
+/// Imutável: só entra, nunca é editado.
+model Resposta {
+  id         Int       @id @default(autoincrement())
+  aparelhoId Int       @map("aparelho_id")
+  aparelho   Aparelho  @relation(fields: [aparelhoId], references: [id], onDelete: Cascade)
+  chipId     Int?      @map("chip_id")
+  chip       Chip?     @relation(fields: [chipId], references: [id])
+  idExterno  String    @map("id_externo")
+  telefone   String
+  texto      String
+  recebidaEm DateTime  @map("recebida_em") @db.Timestamptz(3)
+  mensagemId Int?      @map("mensagem_id")
+  mensagem   Mensagem? @relation(fields: [mensagemId], references: [id])
+  disparoId  Int?      @map("disparo_id")
+  disparo    Disparo?  @relation(fields: [disparoId], references: [id])
+  timeId     Int?      @map("time_id")
+  time       Time?     @relation(fields: [timeId], references: [id])
+  criadaEm   DateTime  @default(now()) @map("criada_em") @db.Timestamptz(3)
+  avisos     Aviso[]
+
+  @@unique([aparelhoId, idExterno])
+  @@index([chipId])
+  @@index([mensagemId])
+  @@index([disparoId])
+  @@index([timeId, recebidaEm])
+  @@index([recebidaEm])
+  @@index([telefone])
+  @@map("respostas")
 }
