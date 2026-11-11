@@ -655,7 +655,10 @@ async function carregar(){
   const r = await api('/api/disparos/'+ID);
   if (!r.ok) { $('dNome').textContent = 'Disparo não encontrado'; $('dInfo').textContent = 'Confira o endereço ou volte para a lista de disparos.'; return; }
   ultimo = await r.json(); pintar();
-  if (ultimo.status === 'ENVIANDO') timer = setTimeout(() => carregar().catch(() => { timer = setTimeout(carregar, 3000); }), 3000);
+  // Continua atualizando enquanto houver mensagem esperando: a entrega é confirmada depois que o disparo fecha.
+  const k = ultimo.contagem || {};
+  const esperando = ultimo.status === 'ENVIANDO' || (k.naFila || 0) + (k.enviando || 0) + (k.aguardando || 0) > 0;
+  if (esperando) timer = setTimeout(() => carregar().catch(() => { timer = setTimeout(carregar, 3000); }), ultimo.status === 'ENVIANDO' ? 3000 : 10000);
 }
 document.querySelectorAll('input[name="filtro"]').forEach(x => x.addEventListener('change', pintar));
 $('btnCancelar').addEventListener('click', async () => {
