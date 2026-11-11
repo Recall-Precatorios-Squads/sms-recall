@@ -1,8 +1,28 @@
-# sms-recall no mini PC: docker compose up -d
-# postgres → migrate (aplica as migrações e sai) → app (telas, porta 3000) + worker (envia pelos celulares) + backup diário
+# sms-recall no mini PC: docker compose up -d --build
+# traefik (porta da tela, distribui entre as réplicas) → app ×2 (telas + API) → postgres (a fila)
+# worker (envia pelos celulares) · migrate (aplica as migrações e sai) · backup (diário) · tunel (opcional: --profile tunel)
 name: sms-recall
 
 services:
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.constraints=Label(`com.docker.compose.project`,`sms-recall`)
+      - --entrypoints.web.address=:80
+      - --ping=true
+    ports:
+      - "${PORTA:-3000}:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -33,15 +53,22 @@ services:
 
   app:
     build: .
-    command: ["node", "src/servidor.js"]
+    command: ["node", "dist/servidor.js"]
     restart: unless-stopped
     env_file: .env
     environment:
       DATABASE_URL: postgresql://sms:${POSTGRES_PASSWORD}@postgres:5432/sms
       HOST: 0.0.0.0
       PORT: 3000
-    ports:
-      - "${PORTA:-3000}:3000"
+    deploy:
+      replicas: ${APP_REPLICAS:-2}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.sms.rule=PathPrefix(`/`)
+      - traefik.http.routers.sms.entrypoints=web
+      - traefik.http.services.sms.loadbalancer.server.port=3000
+      - traefik.http.services.sms.loadbalancer.healthcheck.path=/health
+      - traefik.http.services.sms.loadbalancer.healthcheck.interval=10s
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -55,11 +82,14 @@ services:
 
   worker:
     build: .
-    command: ["node", "src/worker/index.js"]
+    command: ["node", "dist/worker/index.js"]
     restart: unless-stopped
     env_file: .env
     environment:
       DATABASE_URL: postgresql://sms:${POSTGRES_PASSWORD}@postgres:5432/sms
+      PASTA_BACKUPS: /backups
+    volumes:
+      - ./backups:/backups:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -79,6 +109,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Opcional: deixa o CRM (na AWS) chegar à API /v1 sem abrir porta no escritório.
+  # docker compose --profile tunel up -d   (precisa de TUNNEL_TOKEN no .env; no painel da Cloudflare,
+  # aponte o hostname público para http://traefik:80 e libere SÓ o caminho /v1/*)
+  tunel:
+    image: cloudflare/cloudflared:2024.12.2
+    profiles: ["tunel"]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?defina TUNNEL_TOKEN no .env para usar o túnel}
+    depends_on:
+      - traefik
 
 volumes:
   pgdata:
