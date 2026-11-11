@@ -1,0 +1,175 @@
+// Banco do sms-recall. Tabelas no plural, colunas em snake_case, horários em TIMESTAMPTZ (UTC).
+// A tabela `mensagens` É a fila: o worker reserva linhas com FOR UPDATE SKIP LOCKED.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Papel {
+  ADMIN
+  OPERADOR
+}
+
+enum StatusDisparo {
+  ENVIANDO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum StatusMensagem {
+  PENDENTE
+  RESERVADA
+  ENVIANDO
+  ACEITA
+  ENVIADA
+  ENTREGUE
+  FALHOU
+  INCERTA
+  CANCELADA
+  SEM_CONFIRMACAO
+}
+
+enum NivelEvento {
+  INFO
+  AVISO
+  ERRO
+}
+
+model Usuario {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  nome      String
+  senhaHash String    @map("senha_hash")
+  papel     Papel     @default(OPERADOR)
+  ativo     Boolean   @default(true)
+  criadoEm  DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  sessoes   Sessao[]
+  disparos  Disparo[]
+  eventos   Evento[]
+
+  @@map("usuarios")
+}
+
+model Sessao {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique @map("token_hash")
+  usuarioId Int      @map("usuario_id")
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiraEm  DateTime @map("expira_em") @db.Timestamptz(3)
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([usuarioId])
+  @@map("sessoes")
+}
+
+model Aparelho {
+  id              Int       @id @default(autoincrement())
+  nome            String    @unique
+  url             String
+  usuario         String
+  senhaCifrada    String    @map("senha_cifrada")
+  ativo           Boolean   @default(true)
+  online          Boolean   @default(false)
+  bateria         Int?
+  detalhe         String?
+  ultimoContatoEm DateTime? @map("ultimo_contato_em") @db.Timestamptz(3)
+  criadoEm        DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  chips           Chip[]
+
+  @@map("aparelhos")
+}
+
+model Chip {
+  id             Int        @id @default(autoincrement())
+  aparelhoId     Int        @map("aparelho_id")
+  aparelho       Aparelho   @relation(fields: [aparelhoId], references: [id], onDelete: Cascade)
+  simNumero      Int        @map("sim_numero")
+  operadora      String?
+  telefone       String?
+  ativo          Boolean    @default(true)
+  presente       Boolean    @default(true)
+  proximoEnvioEm DateTime   @default(now()) @map("proximo_envio_em") @db.Timestamptz(3)
+  falhasSeguidas Int        @default(0) @map("falhas_seguidas")
+  criadoEm       DateTime   @default(now()) @map("criado_em") @db.Timestamptz(3)
+  mensagens      Mensagem[]
+  eventos        Evento[]
+
+  @@unique([aparelhoId, simNumero])
+  @@map("chips")
+}
+
+model Disparo {
+  id             Int           @id @default(autoincrement())
+  nome           String
+  criadoPorId    Int           @map("criado_por_id")
+  criadoPor      Usuario       @relation(fields: [criadoPorId], references: [id])
+  status         StatusDisparo @default(ENVIANDO)
+  intervaloMinMs Int           @map("intervalo_min_ms")
+  intervaloMaxMs Int           @map("intervalo_max_ms")
+  total          Int
+  abordagens     Int           @default(0)
+  duplicados     Int           @default(0)
+  criadoEm       DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+  terminadoEm    DateTime?     @map("terminado_em") @db.Timestamptz(3)
+  mensagens      Mensagem[]
+  eventos        Evento[]
+
+  @@index([criadoPorId])
+  @@index([status])
+  @@map("disparos")
+}
+
+model Mensagem {
+  id                 Int            @id @default(autoincrement())
+  disparoId          Int            @map("disparo_id")
+  disparo            Disparo        @relation(fields: [disparoId], references: [id])
+  linha              Int?
+  telefone           String
+  nome               String?
+  texto              String
+  indiceAbordagem    Int?           @map("indice_abordagem")
+  status             StatusMensagem @default(PENDENTE)
+  chipId             Int?           @map("chip_id")
+  chip               Chip?          @relation(fields: [chipId], references: [id])
+  idExterno          String?        @map("id_externo")
+  tentativas         Int            @default(0)
+  proximaTentativaEm DateTime       @default(now()) @map("proxima_tentativa_em") @db.Timestamptz(3)
+  reservadaAte       DateTime?      @map("reservada_ate") @db.Timestamptz(3)
+  enviandoEm         DateTime?      @map("enviando_em") @db.Timestamptz(3)
+  aceitaEm           DateTime?      @map("aceita_em") @db.Timestamptz(3)
+  entregueEm         DateTime?      @map("entregue_em") @db.Timestamptz(3)
+  detalhe            String?
+  criadoEm           DateTime       @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm       DateTime       @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  @@index([status, proximaTentativaEm])
+  @@index([disparoId])
+  @@index([chipId])
+  @@map("mensagens")
+}
+
+model Evento {
+  id        Int         @id @default(autoincrement())
+  tipo      String
+  nivel     NivelEvento @default(INFO)
+  texto     String
+  disparoId Int?        @map("disparo_id")
+  disparo   Disparo?    @relation(fields: [disparoId], references: [id])
+  chipId    Int?        @map("chip_id")
+  chip      Chip?       @relation(fields: [chipId], references: [id])
+  usuarioId Int?        @map("usuario_id")
+  usuario   Usuario?    @relation(fields: [usuarioId], references: [id])
+  criadoEm  DateTime    @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([criadoEm])
+  @@index([disparoId])
+  @@index([chipId])
+  @@index([usuarioId])
+  @@map("eventos")
+}
