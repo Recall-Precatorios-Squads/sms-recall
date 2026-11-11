@@ -5,7 +5,7 @@
  * Aceita "(11) 99999-1234", "11999991234", "5511999991234", "+55 11 99999-1234" ou 5511999991234 (número).
  * Devolve { digitos: "5511999991234", e164: "+5511999991234" } ou null.
  */
-export function normalizarTelefone(entrada) {
+export function normalizarTelefone(entrada: unknown): { digitos: string; e164: string } | null {
   if (typeof entrada === 'number' && Number.isFinite(entrada)) entrada = entrada.toFixed(0);
   if (typeof entrada !== 'string') return null;
   let d = entrada.replace(/\D/g, '');
@@ -16,7 +16,7 @@ export function normalizarTelefone(entrada) {
 }
 
 /** "+5511999991234" → "+55 11 9****-1234". Telefone é dado pessoal: só o mascarado vai para log e tela. */
-export function mascarar(e164) {
+export function mascarar(e164: string): string {
   const d = String(e164).replace(/\D/g, '');
   if (d.length < 12) return '***';
   const ddd = d.slice(2, 4);
@@ -34,11 +34,11 @@ const GSM_EXTENSAO = new Set('^{}\\[~]|€');
  * GSM-7: 160 caracteres em 1 SMS; 153 por parte quando é longo.
  * UCS-2 (basta 1 caractere fora do GSM-7, como "ã"): 70 em 1 SMS; 67 por parte.
  */
-export function contarSegmentos(texto) {
+export function contarSegmentos(texto: string | null | undefined): { alfabeto: "GSM-7" | "UCS-2"; caracteres: number; segmentos: number; foraDoGsm: string[] } {
   const s = String(texto ?? '');
   let gsm = true;
   let tamanhoGsm = 0;
-  const foraDoGsm = new Set();
+  const foraDoGsm = new Set<string>();
   for (const ch of s) {
     if (GSM_BASICO.has(ch)) tamanhoGsm += 1;
     else if (GSM_EXTENSAO.has(ch)) tamanhoGsm += 2;
@@ -57,7 +57,7 @@ export function contarSegmentos(texto) {
 }
 
 /** Troca {nome} pelo nome do contato. Sem nome, a variável some e os espaços duplicados são limpos. */
-export function aplicarModelo(modelo, { nome } = {}) {
+export function aplicarModelo(modelo: string, { nome }: { nome?: string | null } = {}): string {
   const n = typeof nome === 'string' ? nome.trim() : '';
   return String(modelo)
     .replace(/\{\s*nome\s*\}/gi, n)
@@ -67,6 +67,6 @@ export function aplicarModelo(modelo, { nome } = {}) {
 }
 
 /** Sorteia uma espera entre o mínimo e o máximo (inclusive). */
-export function sortearEspera(min, max, aleatorio = Math.random) {
+export function sortearEspera(min: number, max: number, aleatorio: () => number = Math.random): number {
   return Math.round(min + aleatorio() * (max - min));
 }
