@@ -21,9 +21,14 @@ const ICONES = {
   wifi: '<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>',
   usuarios: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   sair: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
+  revisao: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  bloqueio: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  chave: '<path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+  copiar: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   editar: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
 };
-function icone(nome, tam = 20) {
+type NomeIcone = keyof typeof ICONES;
+function icone(nome: NomeIcone, tam = 20): string {
   return `<svg class="ic" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome]}</svg>`;
 }
 
@@ -180,6 +185,13 @@ const CSS_EXTRA = `
 
 export const LIMITES_PADRAO = { contatos: 500, modelos: 20, caracteres: 640, intervaloMin: 1, intervaloMax: 600 };
 
+export interface Ctx {
+  usuario: { nome: string; papel: 'ADMIN' | 'OPERADOR' };
+  id?: number;
+  limites?: Partial<typeof LIMITES_PADRAO>;
+  celularUrlPadrao?: string;
+}
+
 const SCRIPT_TEMA = `(function(){try{var t=localStorage.getItem('sms-recall-tema');if(t==='escuro'||t==='claro')document.documentElement.setAttribute('data-theme',t)}catch(e){}})();`;
 
 const SCRIPT_COMUM = `
@@ -202,6 +214,7 @@ function caixa(id, tipo, html){ const b = $(id); b.hidden = false; b.className =
 function badgeStatus(m){ const cls = m.entregue ? 'sucesso' : m.falhou ? 'erro' : m.status === 'INCERTA' ? 'alerta' : m.status === 'CANCELADA' ? 'neutro' : m.final ? 'neutro' : 'triagem'; return '<span class="badge '+cls+'">'+esc(m.rotulo)+'</span>'; }
 function badgeDisparo(s){ return s === 'ENVIANDO' ? '<span class="badge triagem">Enviando</span>' : s === 'CANCELADO' ? '<span class="badge alerta">Cancelado</span>' : '<span class="badge sucesso">Concluído</span>'; }
 function badgeNivel(n){ return n === 'ERRO' ? '<span class="badge erro">Erro</span>' : n === 'AVISO' ? '<span class="badge alerta">Aviso</span>' : '<span class="badge neutro">Info</span>'; }
+function criador(d){ return d.criadoPor ? d.criadoPor.nome : (d.time ? 'API · ' + d.time : 'API'); }
 function taxa(e, f){ return (e + f) ? Math.round(e / (e + f) * 100) + '%' : '—'; }
 function pintarPager(page, size, total, onIr){
   const paginas = Math.max(1, Math.ceil(total / size));
@@ -231,24 +244,32 @@ function textoSegmentos(t){ const s = segmentos(t); return '<span>'+s.alf+'</spa
 })();
 `;
 
-const PAPEL = { ADMIN: 'Administrador', OPERADOR: 'Operador' };
+const PAPEL: Record<string, string> = { ADMIN: 'Administrador', OPERADOR: 'Operador' };
 
-function menuDe(ctx) {
-  const itens = [
+type ItemMenu = [string, string, NomeIcone, string];
+
+function menuDe(ctx: Pick<Ctx, 'usuario'>): ItemMenu[] {
+  const itens: ItemMenu[] = [
     ['geral', '/', 'painel', 'Visão geral'],
     ['disparos', '/disparos', 'disparo', 'Disparos'],
+    ['revisao', '/revisao', 'revisao', 'Revisão'],
     ['aparelhos', '/aparelhos', 'celular', 'Aparelhos e chips'],
+    ['bloqueios', '/bloqueios', 'bloqueio', 'Bloqueios'],
     ['logs', '/logs', 'logs', 'Logs'],
   ];
-  if (ctx.usuario && ctx.usuario.papel === 'ADMIN') itens.push(['usuarios', '/usuarios', 'usuarios', 'Usuários']);
+  if (ctx.usuario && ctx.usuario.papel === 'ADMIN') {
+    itens.push(['usuarios', '/usuarios', 'usuarios', 'Usuários']);
+    itens.push(['times', '/times', 'chave', 'Times (API)']);
+  }
   return itens;
 }
 
-function escHtml(x) {
-  return String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function escHtml(x: unknown): string {
+  const mapa: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(x ?? '').replace(/[&<>"']/g, (c) => mapa[c] ?? c);
 }
 
-function cabecaHtml(titulo, extraHead = '') {
+function cabecaHtml(titulo: string, extraHead = ''): string {
   return `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${titulo} · Serviço de SMS</title>
 <script>${SCRIPT_TEMA}</script>
@@ -259,8 +280,20 @@ function cabecaHtml(titulo, extraHead = '') {
 ${extraHead}`;
 }
 
-function shell({ ativo, antetitulo, titulo, sub, acoes = '', corpo, script = '', extraHead = '', usuario }) {
-  const ctxMenu = { usuario };
+interface OpcoesShell {
+  ativo: string;
+  antetitulo: string;
+  titulo: string;
+  sub?: string;
+  acoes?: string;
+  corpo: string;
+  script?: string;
+  extraHead?: string;
+  usuario?: Ctx['usuario'];
+}
+
+function shell({ ativo, antetitulo, titulo, sub, acoes = '', corpo, script = '', extraHead = '', usuario }: OpcoesShell): string {
+  const ctxMenu = { usuario: usuario as Ctx['usuario'] };
   const nome = usuario ? escHtml(usuario.nome) : '';
   const papel = usuario ? escHtml(PAPEL[usuario.papel] || usuario.papel) : '';
   return `<!doctype html>
@@ -303,7 +336,7 @@ const PLANILHA = '<script src="/public/planilha.js"></script>';
 const PAGER = `<div class="acoes"><button class="botao secundario pequeno" type="button" id="pAnt">Anterior</button><span class="dica" id="pInfo"></span><button class="botao secundario pequeno" type="button" id="pProx">Próxima</button></div>`;
 
 // ───────────── Login ─────────────
-export function paginaLogin() {
+export function paginaLogin(): string {
   return `<!doctype html>
 <html lang="pt-BR" data-theme="claro">
 <head>
@@ -337,8 +370,9 @@ $('email').focus();
 }
 
 // ───────────── Visão geral ─────────────
-export function visaoGeral(ctx) {
+export function visaoGeral(ctx: Ctx): string {
   const corpo = `
+  <div class="grade" style="gap:var(--space-3)"><div id="avisoWorker" hidden></div><div id="avisoJanela" hidden></div><div id="avisoRevisao" hidden></div></div>
   <div class="grade g4">
     <div class="card kpi"><span class="rot">Enviadas hoje</span><span class="valor" id="kTotal">—</span><span class="det" id="kFila"></span></div>
     <div class="card kpi"><span class="rot">Entregues</span><span class="valor" id="kEntregues">—</span><span class="det">confirmadas pela operadora</span></div>
@@ -374,6 +408,14 @@ async function carregar(){
   $('kTaxa').textContent = p.hoje.taxaEntrega === null ? '—' : p.hoje.taxaEntrega + '%';
   $('kFila').textContent = p.fila.pendentes ? p.fila.pendentes + ' na fila' + (p.hoje.aguardando ? ' · ' + p.hoje.aguardando + ' aguardando confirmação' : '') : (p.hoje.aguardando ? p.hoje.aguardando + ' aguardando confirmação' : 'nenhuma na fila');
   $('kIncertas').textContent = p.hoje.incertas ? p.hoje.incertas + ' incerta(s): confira no celular' : 'entregues ÷ concluídas';
+  const aw = $('avisoWorker'); const aj = $('avisoJanela'); const ar = $('avisoRevisao');
+  if (p.worker && !p.worker.vivo) { aw.hidden = false; aw.className = 'alerta-caixa erro'; aw.innerHTML = ${JSON.stringify(icone('alerta'))} + '<span>O envio está parado: o worker não dá sinal desde ' + (p.worker.ultimaBatidaEm ? hora(p.worker.ultimaBatidaEm) : 'o início') + '. Veja <code>docker compose ps</code>.</span>'; }
+  else aw.hidden = true;
+  if (p.janela && !p.janela.aberta) { aj.hidden = false; aj.className = 'alerta-caixa info'; aj.innerHTML = ${JSON.stringify(icone('alerta'))} + '<span>Fora da janela de envio ('+esc(p.janela.inicio)+'–'+esc(p.janela.fim)+'). As mensagens ficam na fila e saem quando a janela abrir.</span>'; }
+  else aj.hidden = true;
+  const rv = p.revisao || { falhas: 0, incertas: 0 };
+  if (rv.falhas > 0 || rv.incertas > 0) { ar.hidden = false; ar.className = 'alerta-caixa alerta'; ar.innerHTML = ${JSON.stringify(icone('alerta'))} + '<span>Há mensagens para revisar: <b>'+rv.falhas+'</b> falha(s) e <b>'+rv.incertas+'</b> incerta(s). <a href="/revisao">Abrir a revisão</a></span>'; }
+  else ar.hidden = true;
   const fora = [...new Set(p.chips.filter(c => c.ativo && c.online === false).map(c => c.aparelho))];
   const aa = $('avisoAparelhos');
   if (fora.length) { aa.hidden = false; aa.className = 'alerta-caixa alerta'; aa.innerHTML = ${JSON.stringify(icone('alerta'))} + '<span>Sem resposta de: '+fora.map(esc).join(', ')+'. Os chips desse celular saíram da roleta. <a href="/aparelhos">Ver aparelhos</a></span>'; }
@@ -382,7 +424,8 @@ async function carregar(){
     const k = c.hoje; const est = estadoChip(c);
     return '<article class="card chip-card"><div class="chip-topo"><div><b>'+esc(c.rotulo)+'</b><div class="chip-num">'+esc(c.telefone||'Número não informado')+'</div></div><span class="badge '+est[0]+'">'+est[1]+'</span></div>'
       + '<div class="linha-info"><span class="badge triagem">'+esc(c.operadora||'Operadora ?')+'</span><span>'+esc(c.aparelho)+' · Chip '+esc(c.simNumero)+'</span>'
-      + (c.bateria!=null ? '<span>'+${JSON.stringify(icone('bateria', 16))}+c.bateria+'%</span>' : '') + '</div>'
+      + (c.bateria!=null ? '<span>'+${JSON.stringify(icone('bateria', 16))}+c.bateria+'%</span>' : '')
+      + '<span>Hoje '+k.total+' de '+c.cota+'</span>' + (c.cotaAtingida ? '<span class="badge alerta">Cota do dia atingida</span>' : '') + '</div>'
       + '<div class="mini"><div><span>Hoje</span><b>'+k.total+'</b></div><div><span>Entregues</span><b>'+k.entregues+'</b></div><div><span>Falhas</span><b>'+k.falhas+'</b></div><div><span>Taxa</span><b>'+taxa(k.entregues, k.falhas)+'</b></div></div></article>';
   }).join('') : '<div class="card vazio">Nenhum chip encontrado. Confira os celulares em <a href="/aparelhos">Aparelhos e chips</a>.</div>';
   $('dVazio').hidden = p.disparos.length > 0; $('dTabela').hidden = !p.disparos.length;
@@ -397,7 +440,7 @@ carregar().catch(() => {}); setInterval(() => carregar().catch(() => {}), 5000);
 }
 
 // ───────────── Disparos: lista ─────────────
-export function listaDisparos(ctx) {
+export function listaDisparos(ctx: Ctx): string {
   const corpo = `
   <section class="card neutro">
     <div id="vazio" class="vazio">Nenhum disparo ainda. Comece pelo botão "Novo disparo".</div>
@@ -409,7 +452,7 @@ let pagina = 1; const TAM = 20;
 async function carregar(){
   const r = await (await api('/api/disparos?page='+pagina+'&size='+TAM)).json();
   $('vazio').hidden = r.data.length > 0; $('tabela').hidden = !r.data.length;
-  $('tabela').querySelector('tbody').innerHTML = r.data.map(d => '<tr class="clicavel" data-href="/disparos/'+d.id+'"><td><b>'+esc(d.nome)+'</b></td><td>'+esc(d.criadoPor ? d.criadoPor.nome : '')+'</td><td>'+dataHora(d.criadoEm)+'</td><td>'+d.contagem.total+'</td><td>'+d.contagem.entregues+'</td><td>'+d.contagem.falhas+'</td><td>'+d.contagem.canceladas+'</td><td>'+badgeDisparo(d.status)+'</td></tr>').join('');
+  $('tabela').querySelector('tbody').innerHTML = r.data.map(d => '<tr class="clicavel" data-href="/disparos/'+d.id+'"><td><b>'+esc(d.nome)+'</b></td><td>'+esc(criador(d))+'</td><td>'+dataHora(d.criadoEm)+'</td><td>'+d.contagem.total+(d.bloqueados > 0 ? '<div class="dica">Bloqueados '+d.bloqueados+'</div>' : '')+'</td><td>'+d.contagem.entregues+'</td><td>'+d.contagem.falhas+'</td><td>'+d.contagem.canceladas+'</td><td>'+badgeDisparo(d.status)+'</td></tr>').join('');
   pintarPager(r.page, r.size, r.total, (p) => { pagina = p; carregar().catch(() => {}); });
 }
 document.addEventListener('click', e => { const tr = e.target.closest('tr[data-href]'); if (tr) location.href = tr.dataset.href; });
@@ -419,7 +462,7 @@ carregar().catch(() => {}); setInterval(() => carregar().catch(() => {}), 5000);
 }
 
 // ───────────── Disparos: novo (planilha → mensagens → envio) ─────────────
-export function novoDisparo(ctx) {
+export function novoDisparo(ctx: Ctx): string {
   const L = { ...LIMITES_PADRAO, ...(ctx.limites || {}) };
   const corpo = `
   <div class="passos">
@@ -603,7 +646,7 @@ carregarChips(); desenharMensagens();
 }
 
 // ───────────── Disparos: acompanhamento ─────────────
-export function detalheDisparo(ctx) {
+export function detalheDisparo(ctx: Ctx): string {
   const corpo = `
   <section class="card">
     <div class="card-cab"><div style="display:grid;gap:var(--space-1)"><h2 id="dNome">Carregando…</h2><span class="dica" id="dInfo"></span></div><div class="acoes"><span id="dStatus"></span><button class="botao perigo pequeno" type="button" id="btnCancelar" hidden>${icone('parar', 16)}Cancelar disparo</button><button class="botao secundario pequeno" type="button" id="btnExportar">${icone('baixar', 16)}Exportar resultado</button></div></div>
@@ -635,7 +678,7 @@ function pintar(){
   const d = ultimo; if (!d) return;
   const k = d.contagem;
   $('dNome').textContent = d.nome;
-  $('dInfo').textContent = 'Criado por '+(d.criadoPor ? d.criadoPor.nome : '—')+' · início '+dataHora(d.criadoEm)+(d.terminadoEm ? ' · fim '+dataHora(d.terminadoEm) : '')+(d.abordagens?' · '+d.abordagens+' texto(s) na roleta':'')+' · cada chip espera '+(d.intervaloMinMs===d.intervaloMaxMs ? seg(d.intervaloMinMs)+' s' : seg(d.intervaloMinMs)+' a '+seg(d.intervaloMaxMs)+' s (sorteado)')+(d.duplicados?' · '+d.duplicados+' repetido(s) ignorado(s)':'');
+  $('dInfo').textContent = 'Criado por '+criador(d)+(d.bloqueados > 0 ? ' · Bloqueados '+d.bloqueados : '')+' · início '+dataHora(d.criadoEm)+(d.terminadoEm ? ' · fim '+dataHora(d.terminadoEm) : '')+(d.abordagens?' · '+d.abordagens+' texto(s) na roleta':'')+' · cada chip espera '+(d.intervaloMinMs===d.intervaloMaxMs ? seg(d.intervaloMinMs)+' s' : seg(d.intervaloMinMs)+' a '+seg(d.intervaloMaxMs)+' s (sorteado)')+(d.duplicados?' · '+d.duplicados+' repetido(s) ignorado(s)':'');
   $('dStatus').innerHTML = badgeDisparo(d.status);
   $('btnCancelar').hidden = d.status !== 'ENVIANDO';
   const parados = k.naFila + k.enviando;
@@ -678,8 +721,8 @@ carregar().catch(() => {});
 }
 
 // ───────────── Aparelhos e chips ─────────────
-export function aparelhos(ctx) {
-  const admin = ctx.usuario && ctx.usuario.papel === 'ADMIN';
+export function aparelhos(ctx: Ctx): string {
+  const admin = ctx.usuario.papel === 'ADMIN';
   const form = admin ? `
   <form class="card" id="form" novalidate>
     <h2 id="formTitulo">Adicionar celular</h2>
@@ -712,7 +755,10 @@ function aviso(tipo, html){ caixa('aviso', tipo, html); }
 function chipHtml(a, c){
   const bad = !c.ativo ? '<span class="badge neutro">Desativado</span>' : !c.presente ? '<span class="badge alerta">Chip não encontrado</span>' : '<span class="badge sucesso">Ativo</span>';
   return '<div class="chip-linha"><span><b style="color:var(--texto-primario)">Chip '+esc(c.simNumero)+'</b> · '+esc(c.telefone||'número não informado')+' <span class="badge triagem">'+esc(c.operadora||'Operadora ?')+'</span>'+(c.falhasSeguidas?' <span class="dica">'+c.falhasSeguidas+' falha(s) seguida(s)</span>':'')+'</span>'
-    + '<span class="acoes">'+bad+(ADMIN ? '<button class="botao secundario pequeno" type="button" data-chip="'+c.id+'" data-ativo="'+(c.ativo?'0':'1')+'">'+(c.ativo?'Desativar chip':'Ativar chip')+'</button>' : '')+'</span></div>';
+    + '<span class="acoes">'+bad+(ADMIN ? '<button class="botao secundario pequeno" type="button" data-chip="'+c.id+'" data-ativo="'+(c.ativo?'0':'1')+'">'+(c.ativo?'Desativar chip':'Ativar chip')+'</button>' : '')+'</span>'
+    + '<span class="dica" style="flex-basis:100%">Hoje '+c.enviadosHoje+' de '+c.cotaEfetiva+(c.cotaDiaria == null ? ' (cota padrão)' : '')+(c.enviadosHoje >= c.cotaEfetiva ? ' · <span class="badge alerta">Cota do dia atingida</span>' : '')+'</span>'
+    + (ADMIN ? '<span class="acoes" style="flex-basis:100%"><label class="dica" for="cota'+c.id+'">Cota diária</label><input id="cota'+c.id+'" type="number" min="0" step="1" inputmode="numeric" placeholder="Padrão" value="'+(c.cotaDiaria == null ? '' : c.cotaDiaria)+'" style="width:120px;height:40px"><button class="botao secundario pequeno" type="button" data-cota="'+c.id+'">Salvar cota</button></span>' : '')
+    + '</div>';
 }
 function cartao(a){
   const estado = !a.ativo ? '<span class="badge neutro">Desativado</span>' : a.online ? '<span class="badge sucesso">Conectado</span>' : '<span class="badge erro">Fora do ar</span>';
@@ -744,6 +790,13 @@ $('lista').addEventListener('click', async (e) => {
       const r = await patchJson('/api/chips/'+t.dataset.chip, { ativo: t.dataset.ativo === '1' });
       if (!r.ok) aviso('erro', esc((await lerJson(r)).mensagem || 'Não foi possível salvar.')); else aviso('sucesso', t.dataset.ativo === '1' ? 'Chip ativado.' : 'Chip desativado.');
       carregar();
+    } else if (t.dataset.cota && ADMIN) {
+      const v = $('cota'+t.dataset.cota).value.trim();
+      const n = v === '' ? null : Number(v);
+      if (n !== null && (!Number.isInteger(n) || n < 0)) { aviso('erro', 'A cota precisa ser um número inteiro maior ou igual a zero.'); return; }
+      const r = await patchJson('/api/chips/'+t.dataset.cota, { cotaDiaria: n });
+      if (!r.ok) aviso('erro', esc((await lerJson(r)).mensagem || 'Não foi possível salvar.')); else aviso('sucesso', n === null ? 'Cota do chip voltou ao padrão.' : 'Cota do chip salva.');
+      carregar();
     } else if (t.dataset.editar && ADMIN) {
       const a = lista.find(x => String(x.id) === t.dataset.editar); if (!a) return;
       editando = a.id; $('fNome').value = a.nome; $('fUrl').value = a.url; $('fUsuario').value = a.usuario; $('fSenha').value = '';
@@ -768,7 +821,7 @@ if (ADMIN) {
     $('fSalvar').disabled = false;
   });
 }
-carregar().catch(() => {}); setInterval(() => { if (editando === null) carregar().catch(() => {}); }, 15000);
+carregar().catch(() => {}); setInterval(() => { const ativoEl = document.activeElement; if (editando === null && !(ativoEl && ativoEl.tagName === 'INPUT' && $('lista').contains(ativoEl))) carregar().catch(() => {}); }, 15000);
 `;
   return shell({
     ...ctx,
@@ -783,7 +836,7 @@ carregar().catch(() => {}); setInterval(() => { if (editando === null) carregar(
 }
 
 // ───────────── Logs ─────────────
-export function logs(ctx) {
+export function logs(ctx: Ctx): string {
   const corpo = `
   <section class="card">
     <div class="grade g3">
@@ -815,7 +868,7 @@ carregar().catch(() => {});
 }
 
 // ───────────── Usuários (ADMIN) ─────────────
-export function usuarios(ctx) {
+export function usuarios(ctx: Ctx): string {
   const corpo = `
   <div id="aviso" hidden></div>
   <section class="card neutro">
@@ -870,4 +923,227 @@ $('form').addEventListener('submit', async (e) => {
 carregar().catch(() => {});
 `;
   return shell({ ...ctx, ativo: 'usuarios', antetitulo: 'Administração', titulo: 'Usuários', sub: 'Quem pode entrar no serviço e o que cada pessoa pode fazer.', corpo, script });
+}
+
+// ───────────── Revisão (falhas e incertas) ─────────────
+export function revisao(ctx: Ctx): string {
+  const corpo = `
+  <div class="alerta-caixa info">${icone('alerta')}<span><b>Incerta</b> quer dizer que a mensagem pode ter saído. Confira no celular (app sms-gate) antes de reenviar, para não mandar em dobro. <b>Falhou</b> quer dizer que a operadora ou o celular recusou.</span></div>
+  <div id="aviso" hidden></div>
+  <section class="card neutro">
+    <div class="card-cab">
+      <div class="segmentado" role="radiogroup" aria-label="Tipo de revisão">
+        <label><input type="radio" name="aba" value="FALHOU" checked><span>Falharam</span></label>
+        <label><input type="radio" name="aba" value="INCERTA"><span>Incertas</span></label>
+      </div>
+      <span class="dica" id="contagem"></span>
+    </div>
+    <div id="vazio" class="vazio" hidden></div>
+    <div class="tabela"><table id="tabela" hidden><thead><tr><th>Disparo</th><th>Telefone</th><th>Texto</th><th>Chip</th><th>Situação</th><th>Atualizado</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
+    ${PAGER}
+  </section>`;
+  const script = `
+let pagina = 1; const TAM = 50;
+function aba(){ return (document.querySelector('input[name="aba"]:checked')||{}).value || 'FALHOU'; }
+function curto(t){ t = String(t||''); return t.length > 70 ? t.slice(0, 70)+'…' : t; }
+function aviso(tipo, html){ caixa('aviso', tipo, html); }
+async function carregar(){
+  const st = aba();
+  const r = await (await api('/api/revisao?status='+st+'&page='+pagina+'&size='+TAM)).json();
+  const lista = r.data || [];
+  $('contagem').textContent = r.total + ' mensagem(ns)';
+  $('vazio').hidden = lista.length > 0; $('tabela').hidden = !lista.length;
+  $('vazio').textContent = st === 'FALHOU' ? 'Nenhuma falha para revisar.' : 'Nenhuma mensagem incerta para revisar.';
+  $('tabela').querySelector('tbody').innerHTML = lista.map(m => {
+    const origem = (m.disparoId ? '<a href="/disparos/'+m.disparoId+'">'+esc(m.disparo || ('Disparo '+m.disparoId))+'</a>' : esc(m.disparo || '—')) + (m.time ? '<div class="dica">API · '+esc(m.time)+'</div>' : '');
+    const cls = m.status === 'INCERTA' ? 'alerta' : 'erro';
+    const acoes = '<span class="acoes"><button class="botao secundario pequeno" type="button" data-reenviar="'+m.id+'">Reenviar</button>'
+      + (m.status === 'INCERTA' ? '<button class="botao secundario pequeno" type="button" data-saiu="'+m.id+'">Confirmei que saiu</button>' : '') + '</span>';
+    return '<tr><td>'+origem+'</td><td>'+esc(m.telefone)+(m.nome ? '<div class="dica">'+esc(m.nome)+'</div>' : '')+'</td><td>'+esc(curto(m.texto))+'</td><td>'+esc(m.chip||'—')+'</td><td><span class="badge '+cls+'">'+esc(m.rotulo)+'</span>'+(m.detalhe ? '<div class="dica">'+esc(m.detalhe)+'</div>' : '')+'<div class="dica">'+m.tentativas+' tentativa(s)</div></td><td>'+dataHora(m.atualizadoEm)+'</td><td>'+acoes+'</td></tr>';
+  }).join('');
+  pintarPager(r.page, r.size, r.total, (p) => { pagina = p; carregar().catch(() => {}); });
+}
+document.querySelectorAll('input[name="aba"]').forEach(x => x.addEventListener('change', () => { pagina = 1; $('aviso').hidden = true; carregar().catch(() => {}); }));
+$('tabela').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const reenviar = b.dataset.reenviar; const saiu = b.dataset.saiu;
+  if (!reenviar && !saiu) return;
+  b.disabled = true;
+  try {
+    const r = await postJson('/api/mensagens/'+(reenviar || saiu)+(reenviar ? '/reprocessar' : '/marcar-enviada'));
+    if (r.ok) aviso('sucesso', reenviar ? 'Mensagem de volta na fila para reenvio.' : 'Mensagem marcada como enviada.');
+    else aviso('erro', esc((await lerJson(r)).mensagem || 'Não foi possível concluir a ação.'));
+    await carregar();
+  } catch (err) { if (err.message !== 'Sessão expirada') aviso('erro', 'Não foi possível falar com o serviço.'); b.disabled = false; }
+});
+carregar().catch(() => {}); setInterval(() => carregar().catch(() => {}), 10000);
+`;
+  return shell({ ...ctx, ativo: 'revisao', antetitulo: 'Revisão', titulo: 'Revisão de mensagens', sub: 'Mensagens que falharam ou ficaram incertas. Decida uma a uma: reenviar ou confirmar que saiu.', corpo, script });
+}
+
+// ───────────── Bloqueios ─────────────
+export function bloqueios(ctx: Ctx): string {
+  const admin = ctx.usuario.papel === 'ADMIN';
+  const corpo = `
+  <div id="aviso" hidden></div>
+  <form class="card" id="form" novalidate>
+    <h2>Bloquear números</h2>
+    <p class="apoio">Números bloqueados não recebem mais SMS, em nenhum disparo.</p>
+    <div class="grade g21">
+      <div class="campo"><label for="fTelefones">Telefones (um por linha)</label><textarea id="fTelefones" rows="4" placeholder="11999998888"></textarea></div>
+      <div class="campo"><label for="fMotivo">Motivo</label><select id="fMotivo"><option value="Pediu para sair">Pediu para sair</option><option value="Número errado">Número errado</option><option value="Reclamação">Reclamação</option><option value="Outro">Outro</option></select></div>
+    </div>
+    <div id="fErro" hidden></div>
+    <div class="acoes"><button class="botao primario" type="submit" id="fSalvar">${icone('bloqueio', 16)}Bloquear</button></div>
+  </form>
+  <section class="card neutro">
+    <div class="card-cab"><h2>Números bloqueados</h2><div class="campo" style="max-width:260px"><label for="fBusca">Buscar pelos 4 últimos dígitos</label><input id="fBusca" inputmode="numeric" maxlength="4" placeholder="Ex.: 8888" autocomplete="off"></div></div>
+    <div id="vazio" class="vazio" hidden>Nenhum número bloqueado.</div>
+    <div class="tabela"><table id="tabela" hidden><thead><tr><th>Telefone</th><th>Motivo</th><th>Bloqueado por</th><th>Em</th>${admin ? '<th></th>' : ''}</tr></thead><tbody></tbody></table></div>
+    ${PAGER}
+  </section>`;
+  const script = `
+const ADMIN = ${JSON.stringify(admin)};
+let pagina = 1; const TAM = 50; let timerBusca = null;
+function aviso(tipo, html){ caixa('aviso', tipo, html); }
+async function carregar(){
+  const busca = $('fBusca').value.trim();
+  const r = await (await api('/api/bloqueios?page='+pagina+'&size='+TAM+(busca ? '&busca='+encodeURIComponent(busca) : ''))).json();
+  const lista = r.data || [];
+  $('vazio').hidden = lista.length > 0; $('tabela').hidden = !lista.length;
+  $('tabela').querySelector('tbody').innerHTML = lista.map(b => '<tr><td>'+esc(b.telefone)+'</td><td>'+esc(b.motivo)+'</td><td>'+esc(b.criadoPor || '—')+'</td><td>'+dataHora(b.criadoEm)+'</td>'
+    + (ADMIN ? '<td><button class="botao secundario pequeno" type="button" data-remover="'+b.id+'">Remover</button></td>' : '') + '</tr>').join('');
+  pintarPager(r.page, r.size, r.total, (p) => { pagina = p; carregar().catch(() => {}); });
+}
+$('fBusca').addEventListener('input', () => { clearTimeout(timerBusca); timerBusca = setTimeout(() => { pagina = 1; carregar().catch(() => {}); }, 300); });
+$('tabela').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-remover]'); if (!b || !ADMIN) return;
+  b.disabled = true;
+  try {
+    const r = await api('/api/bloqueios/'+b.dataset.remover, { method: 'DELETE' });
+    if (r.status === 204 || r.ok) aviso('sucesso', 'Bloqueio removido. O número volta a poder receber SMS.');
+    else aviso('erro', esc((await lerJson(r)).mensagem || 'Não foi possível remover.'));
+    await carregar();
+  } catch (err) { if (err.message !== 'Sessão expirada') aviso('erro', 'Não foi possível falar com o serviço.'); b.disabled = false; }
+});
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault(); $('fErro').hidden = true;
+  const telefones = $('fTelefones').value.split(/\\r?\\n/).map(x => x.trim()).filter(Boolean);
+  if (!telefones.length) { caixa('fErro', 'erro', 'Informe pelo menos um telefone.'); return; }
+  $('fSalvar').disabled = true;
+  try {
+    const r = await postJson('/api/bloqueios', { telefones, motivo: $('fMotivo').value });
+    const c = await lerJson(r);
+    if (r.ok) {
+      const inv = c.invalidos || [];
+      aviso(inv.length ? 'alerta' : 'sucesso', 'Adicionados: <b>'+c.adicionados+'</b> · Já existiam: <b>'+c.jaExistiam+'</b> · Inválidos: <b>'+inv.length+'</b>'+(inv.length ? ' ('+inv.slice(0,10).map(esc).join(', ')+(inv.length > 10 ? '…' : '')+')' : '')+'.');
+      $('fTelefones').value = ''; pagina = 1; await carregar();
+    } else caixa('fErro', 'erro', esc(c.mensagem || 'Não foi possível bloquear.'));
+  } catch (err) { if (err.message !== 'Sessão expirada') caixa('fErro', 'erro', 'Não foi possível falar com o serviço.'); }
+  $('fSalvar').disabled = false;
+});
+carregar().catch(() => {});
+`;
+  return shell({ ...ctx, ativo: 'bloqueios', antetitulo: 'Bloqueios', titulo: 'Números bloqueados', sub: 'Números que não recebem mais SMS. Os telefones aparecem mascarados.', corpo, script });
+}
+
+// ───────────── Times (API) — ADMIN ─────────────
+export function times(ctx: Ctx): string {
+  const corpo = `
+  <div id="aviso" hidden></div>
+  <section class="card" id="caixaChave" hidden>
+    <h2>Chave de API</h2>
+    <div class="alerta-caixa alerta">${icone('alerta')}<span>Guarde agora: ela não aparece de novo. Se perder, gere uma nova chave.</span></div>
+    <div class="acoes"><code id="chaveTexto" style="font-size:14px;padding:var(--space-3)"></code><button class="botao secundario pequeno" type="button" id="btnCopiar">${icone('copiar', 16)}Copiar</button><button class="botao secundario pequeno" type="button" id="btnFecharChave">Já guardei</button></div>
+  </section>
+  <section class="card neutro">
+    <div id="vazio" class="vazio">Carregando…</div>
+    <div class="tabela"><table id="tabela" hidden><thead><tr><th>Time</th><th>Chave</th><th>Cota diária</th><th>Hoje</th><th>Prioridade</th><th>Situação</th><th>Webhook</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <form class="card" id="form" novalidate>
+    <h2 id="formTitulo">Novo time</h2>
+    <div class="grade g2">
+      <div class="campo"><label for="fNome">Nome</label><input id="fNome" maxlength="80" autocomplete="off" required></div>
+      <div class="campo"><label for="fCota">Cota diária (SMS por dia)</label><input id="fCota" type="number" min="0" step="1" value="1000"></div>
+      <div class="campo"><label for="fPrioridade">Prioridade (0 a 10)</label><input id="fPrioridade" type="number" min="0" max="10" step="1" value="5"><span class="dica">Quanto maior, mais cedo as mensagens do time saem.</span></div>
+      <div class="campo"><label for="fWebhook">Webhook URL (opcional)</label><input id="fWebhook" type="url" placeholder="https://sistema.exemplo.com.br/sms" autocomplete="off"></div>
+    </div>
+    <label class="check" for="fAtivo" id="fAtivoBox" hidden><input type="checkbox" id="fAtivo" checked> Time ativo</label>
+    <div id="fErro" hidden></div>
+    <div class="acoes"><button class="botao primario" type="submit" id="fSalvar">${icone('mais', 16)}<span>Criar time</span></button><button class="botao secundario" type="button" id="fCancelar" hidden>Cancelar edição</button></div>
+  </form>
+  <section class="card neutro">
+    <h2>Como o time usa a API</h2>
+    <ol class="apoio" style="display:grid;gap:var(--space-2);padding-left:var(--space-5)">
+      <li>Enviar: <code>POST /v1/mensagens</code> com os headers <code>X-Api-Key</code> e <code>Idempotency-Key</code> e o corpo <code>{ "telefone": "11999998888", "texto": "Olá", "nome": "Maria" }</code> (o <code>nome</code> é opcional).</li>
+      <li>Consultar: <code>GET /v1/mensagens/:id</code> com o header <code>X-Api-Key</code>.</li>
+      <li>A documentação completa fica em <a href="/v1/openapi.json">/v1/openapi.json</a>.</li>
+    </ol>
+  </section>`;
+  const script = `
+let lista = []; let editando = null; let confirmando = null; let timerConf = null;
+function aviso(tipo, html){ caixa('aviso', tipo, html); }
+function mostrarChave(chave){ $('chaveTexto').textContent = chave; $('caixaChave').hidden = false; $('caixaChave').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+async function carregar(){
+  const r = await (await api('/api/times')).json(); lista = r.data || [];
+  $('vazio').hidden = lista.length > 0; $('vazio').textContent = 'Nenhum time cadastrado.'; $('tabela').hidden = !lista.length;
+  $('tabela').querySelector('tbody').innerHTML = lista.map(t => '<tr><td><b>'+esc(t.nome)+'</b><div class="dica">Criado em '+dataHora(t.criadoEm)+'</div></td><td><code>'+esc(t.chavePrefixo)+'…</code></td><td>'+t.cotaDiaria+'</td><td>'+t.hoje+'</td><td>'+t.prioridade+'</td><td>'+(t.ativo?'<span class="badge sucesso">Ativo</span>':'<span class="badge neutro">Inativo</span>')+'</td><td>'+(t.webhookUrl ? esc(t.webhookUrl) : '<span class="dica">—</span>')+'</td>'
+    + '<td><span class="acoes"><button class="botao secundario pequeno" type="button" data-editar="'+t.id+'">${icone('editar', 16)}Editar</button><button class="botao secundario pequeno" type="button" data-chave="'+t.id+'">'+(confirmando === t.id ? 'Confirmar nova chave' : 'Gerar nova chave')+'</button></span></td></tr>').join('');
+}
+function limpar(){ editando = null; $('form').reset(); $('fCota').value = '1000'; $('fPrioridade').value = '5'; $('formTitulo').textContent = 'Novo time'; $('fSalvar').lastChild.textContent = 'Criar time'; $('fCancelar').hidden = true; $('fAtivoBox').hidden = true; }
+$('btnCopiar').addEventListener('click', async () => {
+  const txt = $('chaveTexto').textContent;
+  try { await navigator.clipboard.writeText(txt); aviso('sucesso', 'Chave copiada.'); }
+  catch { const rg = document.createRange(); rg.selectNodeContents($('chaveTexto')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg); aviso('alerta', 'Não consegui copiar sozinho. A chave está selecionada: use Ctrl+C.'); }
+});
+$('btnFecharChave').addEventListener('click', () => { $('caixaChave').hidden = true; $('chaveTexto').textContent = ''; });
+$('tabela').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.editar) {
+    const t = lista.find(x => String(x.id) === b.dataset.editar); if (!t) return;
+    editando = t.id; $('fNome').value = t.nome; $('fCota').value = t.cotaDiaria; $('fPrioridade').value = t.prioridade; $('fWebhook').value = t.webhookUrl || ''; $('fAtivo').checked = t.ativo;
+    $('formTitulo').textContent = 'Editar time'; $('fSalvar').lastChild.textContent = 'Salvar'; $('fCancelar').hidden = false; $('fAtivoBox').hidden = false; $('fErro').hidden = true;
+    $('form').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('fNome').focus();
+  } else if (b.dataset.chave) {
+    const id = Number(b.dataset.chave);
+    if (confirmando !== id) {
+      confirmando = id; clearTimeout(timerConf); timerConf = setTimeout(() => { confirmando = null; carregar().catch(() => {}); }, 6000);
+      aviso('alerta', 'Gerar uma nova chave invalida a chave atual. Clique em <b>Confirmar nova chave</b> para continuar.'); await carregar(); return;
+    }
+    clearTimeout(timerConf); confirmando = null; b.disabled = true;
+    try {
+      const r = await postJson('/api/times/'+id+'/nova-chave'); const c = await lerJson(r);
+      if (r.ok) { mostrarChave(c.chave); aviso('sucesso', 'Nova chave gerada. A chave antiga não vale mais.'); }
+      else aviso('erro', esc(c.mensagem || 'Não foi possível gerar a chave.'));
+    } catch (err) { if (err.message !== 'Sessão expirada') aviso('erro', 'Não foi possível falar com o serviço.'); }
+    await carregar();
+  }
+});
+$('fCancelar').addEventListener('click', limpar);
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault(); $('fErro').hidden = true;
+  const nome = $('fNome').value.trim();
+  const cota = Number($('fCota').value); const prioridade = Number($('fPrioridade').value);
+  if (!nome) { caixa('fErro', 'erro', 'Informe o nome do time.'); return; }
+  if (!Number.isInteger(cota) || cota < 0) { caixa('fErro', 'erro', 'A cota diária precisa ser um número inteiro maior ou igual a zero.'); return; }
+  if (!Number.isInteger(prioridade) || prioridade < 0 || prioridade > 10) { caixa('fErro', 'erro', 'A prioridade vai de 0 a 10.'); return; }
+  const webhook = $('fWebhook').value.trim();
+  $('fSalvar').disabled = true;
+  try {
+    let r;
+    if (editando) r = await putJson('/api/times/'+editando, { nome, cotaDiaria: cota, prioridade, ativo: $('fAtivo').checked, webhookUrl: webhook || null });
+    else r = await postJson('/api/times', { nome, cotaDiaria: cota, prioridade, webhookUrl: webhook || undefined });
+    const c = await lerJson(r);
+    if (r.ok) {
+      const novo = !editando;
+      aviso('sucesso', novo ? 'Time criado.' : 'Time atualizado.');
+      if (novo && c.chave) mostrarChave(c.chave);
+      limpar(); await carregar();
+    } else caixa('fErro', 'erro', esc(c.mensagem || 'Não foi possível salvar.'));
+  } catch (err) { if (err.message !== 'Sessão expirada') caixa('fErro', 'erro', 'Não foi possível falar com o serviço.'); }
+  $('fSalvar').disabled = false;
+});
+carregar().catch(() => {});
+`;
+  return shell({ ...ctx, ativo: 'times', antetitulo: 'Administração', titulo: 'Times (API)', sub: 'Sistemas e áreas que enviam SMS pela API. Cada time tem a própria chave, cota diária e prioridade.', corpo, script });
 }
