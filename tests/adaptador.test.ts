@@ -2,7 +2,7 @@
 import { type Server, createServer } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../src/config.js';
-import { saude } from '../src/smsgate/adaptador.js';
+import { caixaDeEntrada, saude } from '../src/smsgate/adaptador.js';
 
 let servidor: Server;
 let base = '';
@@ -57,5 +57,24 @@ describe('saúde do celular', () => {
 
   it('sem resposta é fora do ar', async () => {
     expect(await saude({ ...ap(), url: 'http://127.0.0.1:1' })).toMatchObject({ online: false });
+  });
+});
+
+describe('respostas no celular (GET /inbox)', () => {
+  it('lê remetente, chip, texto e hora; ignora item sem id', async () => {
+    resposta = {
+      status: 200,
+      corpo: [
+        { id: 'Py1', type: 'SMS', sender: '+5551999990001', recipient: '+5551988880000', simNumber: 2, contentPreview: 'Sim, tenho interesse', createdAt: '2026-11-11T15:00:00Z' },
+        { type: 'SMS', sender: '+5551999990002', createdAt: '2026-11-11T15:00:00Z' },
+      ],
+    };
+    const r = await caixaDeEntrada(ap(), new Date('2026-11-10T00:00:00Z'));
+    expect(r).toEqual([{ idExterno: 'Py1', telefone: '+5551999990001', simNumero: 2, texto: 'Sim, tenho interesse', recebidaEm: new Date('2026-11-11T15:00:00Z') }]);
+  });
+
+  it('app sem /inbox (versão antiga) devolve null', async () => {
+    resposta = { status: 404, corpo: { message: 'not found' } };
+    expect(await caixaDeEntrada(ap(), new Date())).toBeNull();
   });
 });

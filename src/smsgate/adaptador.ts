@@ -16,6 +16,14 @@ export interface ChipInformado {
   operadora: string;
   telefone: string | null;
 }
+/** SMS que chegou no celular (resposta do contato). `telefone` é o remetente como o app informou. */
+export interface Recebida {
+  idExterno: string;
+  telefone: string;
+  simNumero: number | null;
+  texto: string;
+  recebidaEm: Date;
+}
 export interface Saude {
   online: boolean;
   bateria?: number | null;
@@ -78,7 +86,9 @@ async function chamar(ap: Credenciais, caminho: string, opcoes: { metodo?: strin
 }
 
 // ── Simulação ──
-const simuladas = new Map<string, { em: number; falhar: boolean }>();
+const simuladas = new Map<string, { em: number; falhar: boolean; e164: string; simNumero: number }>();
+/** No ensaio, números terminados em 7 respondem 4 s depois do envio. */
+const RESPONDE_NO_ENSAIO = /7$/;
 
 /** Mapeia o estado do app para o nosso. */
 export function mapearEstado(estado: unknown): EstadoEnvio | null {
@@ -149,7 +159,7 @@ export async function enviar(ap: Credenciais, msg: { id: string; texto: string; 
     // Igual ao app real: id repetido é recusado.
     if (simuladas.has(msg.id)) throw new ErroGate('RECUSADO', 'Message with the same ID already exists', 400);
     const falhar = /^\+?5511900000/.test(msg.e164); // números +55 11 90000-xxxx falham no ensaio
-    simuladas.set(msg.id, { em: Date.now(), falhar });
+    simuladas.set(msg.id, { em: Date.now(), falhar, e164: msg.e164, simNumero: msg.simNumero });
     return { idExterno: msg.id, estado: 'ACEITA' };
   }
   const { res, json } = await chamar(ap, '/message', {
@@ -174,6 +184,35 @@ export async function consultar(ap: Credenciais, idExterno: string): Promise<{ e
   if (!res.ok) throw new ErroGate('RECUSADO', `respondeu HTTP ${res.status}`, res.status);
   const motivo = json.recipients?.[0]?.error ?? json.reason ?? null;
   return { estado: mapearEstado(json.state), motivo: motivo ? String(motivo) : null };
+}
+
+/**
+ * SMS recebidos pelo celular desde `desde` (GET /inbox, só no modo Local Server).
+ * Devolve null quando o app não tem essa leitura (versão antiga): quem chama avisa uma vez e segue.
+ */
+export async function caixaDeEntrada(ap: Credenciais, desde: Date, limite = 500): Promise<Recebida[] | null> {
+  if (config.simulado) {
+    const agora = Date.now();
+    return [...simuladas.entries()]
+      .filter(([, s]) => !s.falhar && RESPONDE_NO_ENSAIO.test(s.e164) && agora - s.em > 4_000 && s.em + 4_000 >= desde.getTime())
+      .map(([id, s]) => ({ idExterno: `resp-${id}`, telefone: s.e164, simNumero: s.simNumero, texto: 'Tenho interesse, pode me ligar?', recebidaEm: new Date(s.em + 4_000) }));
+  }
+  const lista: Recebida[] = [];
+  for (let offset = 0; offset < 5 * limite; offset += limite) {
+    const q = new URLSearchParams({ type: 'SMS', limit: String(limite), offset: String(offset), from: desde.toISOString() });
+    const { res, json } = await chamar(ap, `/inbox?${q}`, { timeout: 10_000 });
+    if (res.status === 404 || res.status === 405) return null;
+    if (!res.ok) throw new ErroGate('RECUSADO', `respondeu HTTP ${res.status}`, res.status);
+    const itens: Json[] = Array.isArray(json) ? json : [];
+    for (const i of itens) {
+      const em = new Date(String(i.createdAt ?? ''));
+      if (!i.id || !i.sender || Number.isNaN(em.getTime())) continue;
+      const sim = Number(i.simNumber);
+      lista.push({ idExterno: String(i.id), telefone: String(i.sender), simNumero: Number.isInteger(sim) && sim >= 1 ? sim : null, texto: String(i.contentPreview ?? i.text ?? ''), recebidaEm: em });
+    }
+    if (itens.length < limite) break;
+  }
+  return lista;
 }
 
 /** Teste só de leitura: saúde + chips. Não envia SMS. */

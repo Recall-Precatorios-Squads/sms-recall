@@ -91,7 +91,7 @@ export async function enviarAvisos(): Promise<number> {
   if (!ids.length) return 0;
   const lista = await prisma.aviso.findMany({
     where: { id: { in: ids } },
-    include: { time: { select: { webhookUrl: true, chaveHash: true, ativo: true } }, mensagem: { select: { id: true, chaveIdempotencia: true, disparoId: true, entregueEm: true, detalhe: true } } },
+    include: { time: { select: { webhookUrl: true, chaveHash: true, ativo: true } }, mensagem: { select: { id: true, chaveIdempotencia: true, disparoId: true, entregueEm: true, detalhe: true } }, resposta: { select: { id: true, texto: true, recebidaEm: true } } },
     orderBy: { id: 'asc' },
   });
   let enviados = 0;
@@ -101,16 +101,12 @@ export async function enviarAvisos(): Promise<number> {
       continue;
     }
     const status = a.statusMensagem as keyof typeof ROTULOS;
-    const corpo = JSON.stringify({
-      evento: 'mensagem.status',
-      id: a.mensagem.id,
-      chaveIdempotencia: a.mensagem.chaveIdempotencia,
-      disparoId: a.mensagem.disparoId,
-      status,
-      rotulo: ROTULOS[status] ?? status,
-      entregueEm: a.mensagem.entregueEm,
-      avisoId: a.id,
-    });
+    const base = { id: a.mensagem.id, chaveIdempotencia: a.mensagem.chaveIdempotencia, disparoId: a.mensagem.disparoId };
+    const corpo = JSON.stringify(
+      a.resposta
+        ? { evento: 'mensagem.respondida', ...base, resposta: { id: a.resposta.id, texto: a.resposta.texto, recebidaEm: a.resposta.recebidaEm }, avisoId: a.id }
+        : { evento: 'mensagem.status', ...base, status, rotulo: ROTULOS[status] ?? status, entregueEm: a.mensagem.entregueEm, avisoId: a.id },
+    );
     try {
       let res: Response;
       try {

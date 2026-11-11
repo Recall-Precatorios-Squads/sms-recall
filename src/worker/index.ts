@@ -7,6 +7,7 @@ import { prisma } from '../db.js';
 import { log } from '../lib/log.js';
 import { sincronizarTodos } from '../servicos/aparelhos.js';
 import { registrarEvento } from '../servicos/eventos.js';
+import { lerRespostas } from '../servicos/respostas.js';
 import { acompanharEntregas, cicloDeEnvio, concluirDisparos, recuperarOrfas } from './fila.js';
 import { canaisDeAlerta, enviarAlertas, enviarAvisos } from './notificador.js';
 
@@ -67,6 +68,7 @@ async function iniciar(): Promise<void> {
     laco('acompanhar', config.worker.acompanharMs, acompanharEntregas),
     laco('vigiar', config.worker.vigiarMs, sincronizarTodos),
     laco('ceifar', config.worker.ceifarMs, recuperarOrfas),
+    laco('respostas', config.worker.respostasMs, lerRespostas),
     laco('notificar', config.worker.notificarMs, async () => {
       await enviarAlertas();
       await enviarAvisos();

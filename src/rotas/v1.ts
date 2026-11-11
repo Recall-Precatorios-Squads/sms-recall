@@ -117,8 +117,9 @@ export async function rotasV1(app: FastifyInstance): Promise<void> {
   app.get('/v1/mensagens/:id', async (req, reply) => {
     const id = z.coerce.number().int().positive().safeParse((req.params as { id: string }).id);
     if (!id.success) return erro(reply, 404, 'NAO_ENCONTRADA', 'Mensagem não encontrada.');
-    const m = await prisma.mensagem.findFirst({ where: { id: id.data, timeId: (req.time as Time).id }, select: SELECT_MSG });
-    return m ? dtoMensagem(m) : erro(reply, 404, 'NAO_ENCONTRADA', 'Mensagem não encontrada.');
+    const m = await prisma.mensagem.findFirst({ where: { id: id.data, timeId: (req.time as Time).id }, select: { ...SELECT_MSG, respostas: { select: { id: true, texto: true, recebidaEm: true }, orderBy: { recebidaEm: 'asc' } } } });
+    if (!m) return erro(reply, 404, 'NAO_ENCONTRADA', 'Mensagem não encontrada.');
+    return { ...dtoMensagem(m), respostas: m.respostas };
   });
 
   app.post('/v1/disparos', async (req, reply) => {

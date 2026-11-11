@@ -1,5 +1,6 @@
 // Servidor HTTP: telas (renderizadas no servidor), API interna /api (sessão) e API /v1 (chave de time).
 import cookie from '@fastify/cookie';
+import { Prisma } from '@prisma/client';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -16,6 +17,7 @@ import { bloquear, criarTime, desbloquear, editarTime, listarBloqueios, listarTi
 import { LIMITES, cancelarDisparo, criarDisparo, detalheDisparo, listarDisparos } from './servicos/disparos.js';
 import { TIPOS_ALERTA, registrarEvento, rotuloChip } from './servicos/eventos.js';
 import { ErroNegocio, listarRevisao, marcarEnviada, reprocessar } from './servicos/mensagens.js';
+import { metricaResposta, ultimasRespostas } from './servicos/respostas.js';
 import * as paginas from './web/paginas.js';
 
 type Usuario = NonNullable<Awaited<ReturnType<typeof usuarioDaSessao>>>;
@@ -188,7 +190,7 @@ export async function criarApp({ logger = false }: { logger?: boolean } = {}) {
   // ── Painel ──
   app.get('/api/painel', { preHandler: exigeLogin }, async () => {
     const hoje = inicioDeHoje();
-    const [grupos, porChip, chips, ultimos, eventos, pendentes, worker, falhas, incertas] = await Promise.all([
+    const [grupos, porChip, chips, ultimos, eventos, pendentes, worker, falhas, incertas, respostasHoje, respostas] = await Promise.all([
       prisma.mensagem.groupBy({ by: ['status'], where: { enviandoEm: { gte: hoje } }, _count: { _all: true } }),
       prisma.mensagem.groupBy({ by: ['chipId', 'status'], where: { enviandoEm: { gte: hoje }, chipId: { not: null } }, _count: { _all: true } }),
       prisma.chip.findMany({ include: { aparelho: { select: { nome: true, ativo: true, online: true, bateria: true } } }, orderBy: [{ aparelhoId: 'asc' }, { simNumero: 'asc' }] }),
@@ -198,6 +200,8 @@ export async function criarApp({ logger = false }: { logger?: boolean } = {}) {
       estadoWorker(),
       prisma.mensagem.count({ where: { status: 'FALHOU' } }),
       prisma.mensagem.count({ where: { status: 'INCERTA' } }),
+      metricaResposta(Prisma.sql`m.enviando_em >= ${hoje}`),
+      ultimasRespostas(8),
     ]);
     type G = { status: string; _count: { _all: number } };
     const n = (lista: G[], f: (g: G) => boolean) => lista.filter(f).reduce((t, g) => t + g._count._all, 0);
@@ -211,7 +215,9 @@ export async function criarApp({ logger = false }: { logger?: boolean } = {}) {
         aguardando: n(grupos, (g) => ['ENVIANDO', 'ACEITA', 'ENVIADA'].includes(g.status)),
         incertas: n(grupos, (g) => g.status === 'INCERTA'),
         taxaEntrega: entregues + qtdFalhas ? Math.round((entregues / (entregues + qtdFalhas)) * 100) : null,
+        respostas: respostasHoje,
       },
+      respostas,
       fila: { pendentes },
       janela: { inicio: config.janela.inicio, fim: config.janela.fim, aberta: janelaAberta() },
       worker,

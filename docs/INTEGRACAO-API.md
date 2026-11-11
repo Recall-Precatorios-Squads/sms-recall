@@ -89,11 +89,15 @@ Query: `de`, `ate` (padrão hoje; máx. 92 dias).
   "porStatus": { "ENTREGUE": { "quantidade": 108, "rotulo": "Entregue" } },
   "taxaEntrega": 96.5,
   "tempoMedioEntregaSegundos": 42,
+  "respostas": { "respondidas": 22, "base": 112, "taxaResposta": 19.6, "tempoMedianoRespostaSegundos": 540, "tempoMedioRespostaSegundos": 2280 },
   "porDia": [ { "dia": "2026-11-10", "total": 60, "entregues": 57, "falhas": 2, "naFila": 0, "enviando": 0, "aguardando": 0, "canceladas": 0, "incertas": 1 } ],
   "cotaHoje": { "usadas": 60, "cota": 1000, "restante": 940 }
 }
 ```
 `taxaEntrega` = entregues ÷ (entregues + falhas) em %, `null` sem finalizadas. `entregues` inclui `SEM_CONFIRMACAO`.
+`respostas`: quantos contatos responderam. `taxaResposta` = respondidas ÷ `base` (mensagens que saíram sem falha), em %;
+`tempoMedianoRespostaSegundos` = tempo típico entre a mensagem sair e a 1ª resposta. A resposta conta para a última mensagem
+enviada àquele telefone nos 7 dias anteriores; o celular é lido a cada minuto. `GET /v1/mensagens/{id}` traz `respostas: [{ id, texto, recebidaEm }]`.
 
 ### 4.5 Lote: `POST /v1/disparos`, `GET /v1/disparos/{id}`, `POST /v1/disparos/{id}/cancelar`
 ```json
@@ -142,6 +146,11 @@ X-SMS-Aviso-Id: <número>
 
 { "evento": "mensagem.status", "id": 42, "chaveIdempotencia": "cobranca-123", "disparoId": null,
   "status": "ENTREGUE", "rotulo": "Entregue", "entregueEm": "2026-11-11T15:03:10.000Z", "avisoId": 128 }
+```
+Quando o contato **responde** o SMS, chega um aviso por resposta (o texto é dado do contato: não grave em log):
+```
+{ "evento": "mensagem.respondida", "id": 42, "chaveIdempotencia": "cobranca-123", "disparoId": null,
+  "resposta": { "id": 7, "texto": "Tenho interesse, pode me ligar?", "recebidaEm": "2026-11-11T15:12:40.000Z" }, "avisoId": 131 }
 ```
 - Responda **2xx** rápido (processe depois). **4xx** não é repetido; **5xx/timeout (10 s)** é repetido até 5 vezes
   (30 s, 2 min, 10 min, 30 min, 1 h).
@@ -206,8 +215,10 @@ app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body,
 app.post('/v1/integracoes/sms/webhook', async (req, reply) => {
   const cru = req.body as string;
   if (!assinaturaValida(cru, req.headers['x-sms-assinatura'] as string | undefined)) return reply.code(401).send();
-  const aviso = JSON.parse(cru) as { avisoId: number; id: number; chaveIdempotencia: string | null; status: string; entregueEm: string | null };
-  // 1) ignorar avisoId já processado  2) atualizar o registro pelo id/chaveIdempotencia  3) responder 2xx rápido
+  const aviso = JSON.parse(cru) as
+    | { evento: 'mensagem.status'; avisoId: number; id: number; chaveIdempotencia: string | null; status: string; entregueEm: string | null }
+    | { evento: 'mensagem.respondida'; avisoId: number; id: number; chaveIdempotencia: string | null; resposta: { id: number; texto: string; recebidaEm: string } };
+  // 1) ignorar avisoId já processado  2) pelo evento: atualizar o status OU registrar a resposta  3) responder 2xx rápido
   return reply.code(204).send();
 });
 ```

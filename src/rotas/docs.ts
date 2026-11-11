@@ -192,6 +192,7 @@ const mensagem = await r.json(); // 202 (nova) ou 200 (já existia com essa Idem
   "porStatus": { "ENTREGUE": { "quantidade": 108, "rotulo": "Entregue" }, "FALHOU": { "quantidade": 4, "rotulo": "Falhou" } },
   "taxaEntrega": 96.5,
   "tempoMedioEntregaSegundos": 42,
+  "respostas": { "respondidas": 22, "base": 112, "taxaResposta": 19.6, "tempoMedianoRespostaSegundos": 540, "tempoMedioRespostaSegundos": 2280 },
   "porDia": [ { "dia": "2026-11-10", "total": 60, "entregues": 57, "falhas": 2, "naFila": 0, "enviando": 0, "aguardando": 0, "canceladas": 0, "incertas": 1 } ],
   "cotaHoje": { "usadas": 60, "cota": 1000, "restante": 940 }
 }`)}
@@ -199,6 +200,8 @@ const mensagem = await r.json(); // 202 (nova) ou 200 (já existia com essa Idem
     <li><b>taxaEntrega</b>: entregues ÷ (entregues + falhas), em %. Mensagens ainda na fila ou aguardando não entram.</li>
     <li><b>entregues</b> inclui <code>SEM_CONFIRMACAO</code> (saiu, sem relatório da operadora).</li>
     <li><b>cotaHoje</b>: quanto o seu time já pediu hoje e quanto ainda pode pedir.</li>
+    <li><b>respostas</b>: quantos contatos responderam o SMS. <b>taxaResposta</b> = respondidas ÷ mensagens que saíram sem falha (<b>base</b>), em %. <b>tempoMedianoRespostaSegundos</b> é o tempo típico entre a mensagem sair e a 1ª resposta chegar (a média sobe muito com quem responde no dia seguinte). A resposta conta para a última mensagem enviada àquele telefone nos 7 dias anteriores. O celular é lido a cada minuto.</li>
+    <li>A resposta de uma mensagem aparece em <code>GET /v1/mensagens/{id}</code>, no campo <code>respostas</code> (<code>[{ id, texto, recebidaEm }]</code>).</li>
   </ul>
   <h3>Quais falharam? Lista paginada</h3>
   ${codigo(`curl "${base}/v1/mensagens?status=FALHOU&de=2026-11-01&ate=2026-11-11&page=1&size=50" -H "X-Api-Key: sms_SUA_CHAVE"
@@ -245,6 +248,9 @@ X-SMS-Aviso-Id: 128
 
 { "evento": "mensagem.status", "id": 42, "chaveIdempotencia": "cobranca-123", "disparoId": null,
   "status": "ENTREGUE", "rotulo": "Entregue", "entregueEm": "2026-11-11T15:03:10.000Z", "avisoId": 128 }`)}
+  <p class="apoio">Quando o contato <b>responde</b> o SMS, chega outro aviso, com o texto da resposta (uma por resposta):</p>
+  ${codigo(`{ "evento": "mensagem.respondida", "id": 42, "chaveIdempotencia": "cobranca-123", "disparoId": null,
+  "resposta": { "id": 7, "texto": "Tenho interesse, pode me ligar?", "recebidaEm": "2026-11-11T15:12:40.000Z" }, "avisoId": 131 }`)}
   <div class="grade g2">
     <div class="grade">
       <h3>Responda</h3>

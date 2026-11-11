@@ -184,6 +184,20 @@ describe('API /v1: métricas e lista do time', () => {
     expect(m.porDia).toHaveLength(1);
     expect(m.porStatus.FALHOU).toEqual({ quantidade: 1, rotulo: 'Falhou' });
     expect(m.cotaHoje).toEqual({ usadas: 4, cota: 100, restante: 96 });
+    expect(m.respostas).toEqual({ respondidas: 0, base: 2, taxaResposta: 0, tempoMedianoRespostaSegundos: null, tempoMedioRespostaSegundos: null });
+  });
+
+  it('métricas e mensagem: mostram a resposta do contato', async () => {
+    const { chave, id } = await timeComChave();
+    const ap = await prisma.aparelho.create({ data: { nome: 'Cel', url: 'http://x', usuario: 'u', senhaCifrada: 'x' } });
+    const enviadaEm = new Date(Date.now() - 600_000);
+    const m = await prisma.mensagem.create({ data: { telefone: '+5511999990001', texto: 'a', timeId: id, status: 'ENTREGUE', aceitaEm: enviadaEm } });
+    await prisma.mensagem.create({ data: { telefone: '+5511999990002', texto: 'b', timeId: id, status: 'ENTREGUE', aceitaEm: enviadaEm } });
+    await prisma.resposta.create({ data: { aparelhoId: ap.id, idExterno: 'r1', telefone: '+5511999990001', texto: 'Pode ligar', recebidaEm: new Date(enviadaEm.getTime() + 120_000), mensagemId: m.id, timeId: id } });
+    const r = await app.inject({ method: 'GET', url: '/v1/metricas', headers: { 'x-api-key': chave } });
+    expect(r.json().respostas).toMatchObject({ respondidas: 1, base: 2, taxaResposta: 50, tempoMedianoRespostaSegundos: 120 });
+    const um = await app.inject({ method: 'GET', url: `/v1/mensagens/${m.id}`, headers: { 'x-api-key': chave } });
+    expect(um.json().respostas).toEqual([expect.objectContaining({ texto: 'Pode ligar' })]);
   });
 
   it('lista: filtra por status, pagina e não mostra mensagem de outro time', async () => {

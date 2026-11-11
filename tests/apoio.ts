@@ -8,7 +8,7 @@ export const NOITE = new Date('2026-11-12T02:00:00Z');
 
 export async function limpar(): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE avisos, alertas, eventos, mensagens, disparos, chips, aparelhos, sessoes, bloqueios, times, tentativas_login, batidas_worker, usuarios RESTART IDENTITY CASCADE',
+    'TRUNCATE respostas, avisos, alertas, eventos, mensagens, disparos, chips, aparelhos, sessoes, bloqueios, times, tentativas_login, batidas_worker, usuarios RESTART IDENTITY CASCADE',
   );
 }
 

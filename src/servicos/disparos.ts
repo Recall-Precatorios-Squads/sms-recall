@@ -1,10 +1,11 @@
 // Disparos por planilha (tela) ou por lote (API /v1): validação, bloqueio, criação na fila, cancelamento e resumo.
-import type { StatusMensagem } from '@prisma/client';
+import { Prisma, type StatusMensagem } from '@prisma/client';
 import { prisma } from '../db.js';
 import { aplicarModelo, contarSegmentos, mascarar, normalizarTelefone } from '../lib/texto.js';
 import { chipsDisponiveis } from './aparelhos.js';
 import { registrarEvento, rotuloChip } from './eventos.js';
 import { ErroNegocio, FINAIS, ROTULOS, atualizarMensagem, bloqueadosEntre } from './mensagens.js';
+import { metricaResposta, respondidasPorDisparo, respostasDoDisparo } from './respostas.js';
 
 export { ErroNegocio, ROTULOS, FINAIS };
 
@@ -152,27 +153,36 @@ const comTime = <T extends LinhaResumo>(d: T) => ({ ...d, time: d.time?.nome ?? 
 export async function resumoDisparo(id: number, timeId: number | null = null) {
   const d = await prisma.disparo.findUnique({ where: { id }, select: { ...SELECT_RESUMO, timeId: true } });
   if (!d || (timeId !== null && d.timeId !== timeId)) return null;
-  const grupos = await prisma.mensagem.groupBy({ by: ['status'], where: { disparoId: id }, _count: { _all: true } });
+  const [grupos, respostas] = await Promise.all([
+    prisma.mensagem.groupBy({ by: ['status'], where: { disparoId: id }, _count: { _all: true } }),
+    metricaResposta(Prisma.sql`m.disparo_id = ${id}`),
+  ]);
   const { timeId: _t, ...resto } = d;
-  return { ...comTime(resto), contagem: contagemDe(grupos) };
+  return { ...comTime(resto), contagem: contagemDe(grupos), respostas };
 }
 
 export async function listarDisparos({ page, size }: { page: number; size: number }) {
   const [total, lista] = await Promise.all([prisma.disparo.count(), prisma.disparo.findMany({ select: SELECT_RESUMO, orderBy: { id: 'desc' }, skip: (page - 1) * size, take: size })]);
   const ids = lista.map((d) => d.id);
-  const grupos = ids.length ? await prisma.mensagem.groupBy({ by: ['disparoId', 'status'], where: { disparoId: { in: ids } }, _count: { _all: true } }) : [];
-  const data = lista.map((d) => ({ ...comTime(d), contagem: contagemDe(grupos.filter((g) => g.disparoId === d.id)) }));
+  const [grupos, respondidas] = await Promise.all([
+    ids.length ? prisma.mensagem.groupBy({ by: ['disparoId', 'status'], where: { disparoId: { in: ids } }, _count: { _all: true } }) : [],
+    respondidasPorDisparo(ids),
+  ]);
+  const data = lista.map((d) => ({ ...comTime(d), contagem: contagemDe(grupos.filter((g) => g.disparoId === d.id)), respondidas: respondidas.get(d.id) ?? 0 }));
   return { data, page, size, total };
 }
 
 export async function detalheDisparo(id: number) {
   const resumo = await resumoDisparo(id);
   if (!resumo) return null;
-  const msgs = await prisma.mensagem.findMany({
-    where: { disparoId: id },
-    select: { id: true, linha: true, nome: true, telefone: true, texto: true, status: true, detalhe: true, atualizadoEm: true, entregueEm: true, chip: { select: { simNumero: true, operadora: true, aparelho: { select: { nome: true } } } } },
-    orderBy: { id: 'asc' },
-  });
+  const [msgs, respostas] = await Promise.all([
+    prisma.mensagem.findMany({
+      where: { disparoId: id },
+      select: { id: true, linha: true, nome: true, telefone: true, texto: true, status: true, detalhe: true, atualizadoEm: true, aceitaEm: true, entregueEm: true, chip: { select: { simNumero: true, operadora: true, aparelho: { select: { nome: true } } } } },
+      orderBy: { id: 'asc' },
+    }),
+    respostasDoDisparo(id),
+  ]);
   return {
     ...resumo,
     mensagens: msgs.map((m) => ({
@@ -187,6 +197,8 @@ export async function detalheDisparo(id: number) {
       detalhe: m.detalhe,
       atualizadoEm: m.atualizadoEm,
       entregueEm: m.entregueEm,
+      aceitaEm: m.aceitaEm,
+      respostas: respostas.get(m.id) ?? [],
       final: FINAIS.has(m.status),
       entregue: m.status === 'ENTREGUE' || m.status === 'SEM_CONFIRMACAO',
       falhou: m.status === 'FALHOU' || m.status === 'INCERTA',

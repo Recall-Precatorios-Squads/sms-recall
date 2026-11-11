@@ -74,6 +74,8 @@ button.pilula{cursor:pointer;width:40px;padding:0;justify-content:center;font:in
 .grade{display:grid;gap:var(--space-6)}
 @media(min-width:900px){.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g21{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}}
 @media(min-width:600px) and (max-width:899px){.g4,.g3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:600px) and (max-width:1199px){.g5{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1200px){.g5{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .card{background:var(--superficie);border:1px solid var(--borda-padrao);box-shadow:var(--sombra-card);border-radius:var(--radius-lg);padding:var(--space-5);display:grid;gap:var(--space-4);align-content:start;min-width:0}
 .card.neutro{background:var(--superficie-neutra);border-color:var(--borda-neutra)}
 .card-cab{display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;justify-content:space-between}
@@ -244,6 +246,8 @@ function badgeDisparo(s){ return s === 'ENVIANDO' ? '<span class="badge triagem"
 function badgeNivel(n){ return n === 'ERRO' ? '<span class="badge erro">Erro</span>' : n === 'AVISO' ? '<span class="badge alerta">Aviso</span>' : '<span class="badge neutro">Info</span>'; }
 function criador(d){ return d.criadoPor ? d.criadoPor.nome : (d.time ? 'API · ' + d.time : 'API'); }
 function taxa(e, f){ return (e + f) ? Math.round(e / (e + f) * 100) + '%' : '—'; }
+function duracao(seg){ if (seg == null) return '—'; if (seg < 60) return seg + ' s'; const m = Math.round(seg / 60); if (m < 60) return m + ' min'; const h = Math.floor(m / 60); if (h < 24) return h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : ''); return Math.round(h / 24) + ' d'; }
+function detalheResposta(r){ if (!r || !r.base) return 'nenhuma mensagem saiu ainda'; return String(r.taxaResposta).replace('.', ',') + '% das ' + r.base + ' que saíram' + (r.tempoMedianoRespostaSegundos != null ? ' · respondem em ~' + duracao(r.tempoMedianoRespostaSegundos) : ''); }
 function pintarPager(page, size, total, onIr){
   const paginas = Math.max(1, Math.ceil(total / size));
   $('pInfo').textContent = 'Página ' + page + ' de ' + paginas + ' · ' + total + ' no total';
@@ -448,11 +452,12 @@ $('email').focus();
 export function visaoGeral(ctx: Ctx): string {
   const corpo = `
   <div class="grade" style="gap:var(--space-3)"><div id="avisoWorker" hidden></div><div id="avisoJanela" hidden></div><div id="avisoRevisao" hidden></div></div>
-  <div class="grade g4">
+  <div class="grade g5">
     <div class="card kpi"><span class="rot">Enviadas hoje</span><span class="valor" id="kTotal">—</span><span class="det" id="kFila"></span></div>
     <div class="card kpi"><span class="rot">Entregues</span><span class="valor" id="kEntregues">—</span><span class="det">confirmadas pela operadora</span></div>
     <div class="card kpi"><span class="rot">Falhas</span><span class="valor" id="kFalhas">—</span><span class="det">recusadas pelo celular ou pela operadora</span></div>
     <div class="card kpi"><span class="rot">Taxa de entrega</span><span class="valor" id="kTaxa">—</span><span class="det" id="kIncertas">entregues ÷ concluídas</span></div>
+    <div class="card kpi"><span class="rot">Responderam</span><span class="valor" id="kResp">—</span><span class="det" id="kRespDet">das enviadas hoje</span></div>
   </div>
   <section class="grade" style="gap:var(--space-4)">
     <div class="card-cab"><h2 style="margin:0;font-size:15px;font-weight:600">Chips</h2><span class="dica" id="atualizadoEm"></span></div>
@@ -463,13 +468,18 @@ export function visaoGeral(ctx: Ctx): string {
     <section class="card neutro">
       <div class="card-cab"><h2>Últimos disparos</h2><a class="botao secundario pequeno" href="/disparos/novo">${icone('mais', 16)}Novo disparo</a></div>
       <div id="dVazio" class="vazio">Nenhum disparo ainda.</div>
-      <div class="tabela"><table id="dTabela" hidden><thead><tr><th>Disparo</th><th>Contatos</th><th>Entregues</th><th>Falhas</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+      <div class="tabela"><table id="dTabela" hidden><thead><tr><th>Disparo</th><th>Contatos</th><th>Entregues</th><th>Falhas</th><th>Responderam</th><th>Status</th></tr></thead><tbody></tbody></table></div>
     </section>
     <section class="card">
       <div class="card-cab"><h2>Últimos eventos</h2><a class="dica" href="/logs">Ver todos os logs</a></div>
       <ul class="eventos" id="eventos"><li class="vazio" style="display:block">Carregando…</li></ul>
     </section>
-  </div>`;
+  </div>
+  <section class="card neutro">
+    <div class="card-cab"><h2>Últimas respostas</h2><span class="dica">O que os contatos mandaram de volta para os chips</span></div>
+    <div id="rVazio" class="vazio">Nenhuma resposta ainda. O sistema lê o celular a cada minuto.</div>
+    <div class="tabela"><table id="rTabela" hidden><thead><tr><th>Recebida</th><th>Contato</th><th>Resposta</th><th>Disparo</th></tr></thead><tbody></tbody></table></div>
+  </section>`;
   const script = `
 function estadoChip(c){
   if (!c.ativo) return ['neutro', 'Desativado'];
@@ -481,6 +491,7 @@ async function carregar(){
   const p = await (await api('/api/painel')).json();
   $('kTotal').textContent = p.hoje.total; $('kEntregues').textContent = p.hoje.entregues; $('kFalhas').textContent = p.hoje.falhas;
   $('kTaxa').textContent = p.hoje.taxaEntrega === null ? '—' : p.hoje.taxaEntrega + '%';
+  const rh = p.hoje.respostas; $('kResp').textContent = rh ? rh.respondidas : '—'; $('kRespDet').textContent = detalheResposta(rh);
   $('kFila').textContent = p.fila.pendentes ? p.fila.pendentes + ' na fila' + (p.hoje.aguardando ? ' · ' + p.hoje.aguardando + ' aguardando confirmação' : '') : (p.hoje.aguardando ? p.hoje.aguardando + ' aguardando confirmação' : 'nenhuma na fila');
   $('kIncertas').textContent = p.hoje.incertas ? p.hoje.incertas + ' incerta(s): confira no celular' : 'entregues ÷ concluídas';
   const aw = $('avisoWorker'); const aj = $('avisoJanela'); const ar = $('avisoRevisao');
@@ -505,7 +516,9 @@ async function carregar(){
       + '<div class="mini"><div><span>Hoje</span><b>'+k.total+'</b></div><div><span>Entregues</span><b>'+k.entregues+'</b></div><div><span>Falhas</span><b>'+k.falhas+'</b></div><div><span>Taxa</span><b>'+taxa(k.entregues, k.falhas)+'</b></div></div></article>';
   }).join('') : '<div class="card vazio">Nenhum chip encontrado. Confira os celulares em <a href="/aparelhos">Aparelhos e chips</a>.</div>';
   $('dVazio').hidden = p.disparos.length > 0; $('dTabela').hidden = !p.disparos.length;
-  $('dTabela').querySelector('tbody').innerHTML = p.disparos.map(d => '<tr class="clicavel" data-href="/disparos/'+d.id+'"><td><b>'+esc(d.nome)+'</b><div class="dica">'+dataHora(d.criadoEm)+'</div></td><td>'+d.contagem.total+'</td><td>'+d.contagem.entregues+'</td><td>'+d.contagem.falhas+'</td><td>'+badgeDisparo(d.status)+'</td></tr>').join('');
+  $('dTabela').querySelector('tbody').innerHTML = p.disparos.map(d => '<tr class="clicavel" data-href="/disparos/'+d.id+'"><td><b>'+esc(d.nome)+'</b><div class="dica">'+dataHora(d.criadoEm)+'</div></td><td>'+d.contagem.total+'</td><td>'+d.contagem.entregues+'</td><td>'+d.contagem.falhas+'</td><td>'+(d.respondidas||0)+'</td><td>'+badgeDisparo(d.status)+'</td></tr>').join('');
+  const rs = p.respostas || []; $('rVazio').hidden = rs.length > 0; $('rTabela').hidden = !rs.length;
+  $('rTabela').querySelector('tbody').innerHTML = rs.map(x => '<tr'+(x.disparoId ? ' class="clicavel" data-href="/disparos/'+x.disparoId+'"' : '')+'><td>'+dataHora(x.recebidaEm)+'</td><td>'+esc(x.nome||'—')+'<div class="dica">'+esc(x.telefone)+'</div></td><td>'+esc(x.texto)+'</td><td>'+(x.disparo ? esc(x.disparo) : '<span class="dica">Mensagem avulsa (API)</span>')+'</td></tr>').join('');
   $('eventos').innerHTML = p.eventos.length ? p.eventos.map(x => '<li><time>'+hora(x.criadoEm)+'</time><span>'+badgeNivel(x.nivel)+'</span><span>'+esc(x.texto)+'</span></li>').join('') : '<li class="vazio" style="display:block">Nenhum evento ainda.</li>';
   $('atualizadoEm').textContent = 'Atualizado às ' + new Date().toLocaleTimeString('pt-BR') + ' · a cada 5 s';
 }
@@ -520,7 +533,7 @@ export function listaDisparos(ctx: Ctx): string {
   const corpo = `
   <section class="card neutro">
     <div id="vazio" class="vazio">Nenhum disparo ainda. Comece pelo botão "Novo disparo".</div>
-    <div class="tabela"><table id="tabela" hidden><thead><tr><th>Disparo</th><th>Criado por</th><th>Início</th><th>Contatos</th><th>Entregues</th><th>Falhas</th><th>Canceladas</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+    <div class="tabela"><table id="tabela" hidden><thead><tr><th>Disparo</th><th>Criado por</th><th>Início</th><th>Contatos</th><th>Entregues</th><th>Falhas</th><th>Canceladas</th><th>Responderam</th><th>Status</th></tr></thead><tbody></tbody></table></div>
     ${PAGER}
   </section>`;
   const script = `
@@ -528,7 +541,7 @@ let pagina = 1; const TAM = 20;
 async function carregar(){
   const r = await (await api('/api/disparos?page='+pagina+'&size='+TAM)).json();
   $('vazio').hidden = r.data.length > 0; $('tabela').hidden = !r.data.length;
-  $('tabela').querySelector('tbody').innerHTML = r.data.map(d => '<tr class="clicavel" data-href="/disparos/'+d.id+'"><td><b>'+esc(d.nome)+'</b></td><td>'+esc(criador(d))+'</td><td>'+dataHora(d.criadoEm)+'</td><td>'+d.contagem.total+(d.bloqueados > 0 ? '<div class="dica">Bloqueados '+d.bloqueados+'</div>' : '')+'</td><td>'+d.contagem.entregues+'</td><td>'+d.contagem.falhas+'</td><td>'+d.contagem.canceladas+'</td><td>'+badgeDisparo(d.status)+'</td></tr>').join('');
+  $('tabela').querySelector('tbody').innerHTML = r.data.map(d => '<tr class="clicavel" data-href="/disparos/'+d.id+'"><td><b>'+esc(d.nome)+'</b></td><td>'+esc(criador(d))+'</td><td>'+dataHora(d.criadoEm)+'</td><td>'+d.contagem.total+(d.bloqueados > 0 ? '<div class="dica">Bloqueados '+d.bloqueados+'</div>' : '')+'</td><td>'+d.contagem.entregues+'</td><td>'+d.contagem.falhas+'</td><td>'+d.contagem.canceladas+'</td><td>'+(d.respondidas||0)+'</td><td>'+badgeDisparo(d.status)+'</td></tr>').join('');
   pintarPager(r.page, r.size, r.total, (p) => { pagina = p; carregar().catch(() => {}); });
 }
 document.addEventListener('click', e => { const tr = e.target.closest('tr[data-href]'); if (tr) location.href = tr.dataset.href; });
@@ -759,11 +772,12 @@ export function detalheDisparo(ctx: Ctx): string {
     <div class="seg" id="dProgresso"></div>
     <div id="dAviso" hidden></div>
   </section>
-  <div class="grade g4">
+  <div class="grade g5">
     <div class="card kpi"><span class="rot">Na fila</span><span class="valor" id="kFila">—</span><span class="det">ainda não saíram</span></div>
     <div class="card kpi"><span class="rot">Aguardando</span><span class="valor" id="kEnviadas">—</span><span class="det">saíram, esperando a operadora</span></div>
     <div class="card kpi"><span class="rot">Entregues</span><span class="valor" id="kEntregues">—</span><span class="det">confirmadas pela operadora</span></div>
     <div class="card kpi"><span class="rot">Falhas</span><span class="valor" id="kFalhas">—</span><span class="det" id="kCanc"></span></div>
+    <div class="card kpi"><span class="rot">Responderam</span><span class="valor" id="kResp">—</span><span class="det" id="kRespDet"></span></div>
   </div>
   <section class="card neutro">
     <div class="card-cab"><h2>Contatos</h2><div class="segmentado" role="radiogroup" aria-label="Filtrar por status">
@@ -771,13 +785,20 @@ export function detalheDisparo(ctx: Ctx): string {
       <label><input type="radio" name="filtro" value="entregue"><span>Entregues</span></label>
       <label><input type="radio" name="filtro" value="falha"><span>Falhas</span></label>
       <label><input type="radio" name="filtro" value="pendente"><span>Pendentes</span></label>
+      <label><input type="radio" name="filtro" value="respondeu"><span>Responderam</span></label>
     </div></div>
-    <div class="tabela"><table id="tabela"><thead><tr><th>Linha</th><th>Nome</th><th>Telefone</th><th>Texto</th><th>Chip</th><th>Status</th><th>Atualizado</th></tr></thead><tbody></tbody></table></div>
+    <div class="tabela"><table id="tabela"><thead><tr><th>Linha</th><th>Nome</th><th>Telefone</th><th>Texto</th><th>Chip</th><th>Status</th><th>Resposta</th><th>Atualizado</th></tr></thead><tbody></tbody></table></div>
   </section>`;
   const script = `
 const ID = ${JSON.stringify(ctx.id)}; let ultimo = null; let timer = null;
 function filtro(){ return (document.querySelector('input[name="filtro"]:checked')||{}).value || 'todos'; }
 function seg(ms){ return ms % 1000 === 0 ? String(ms/1000) : String(ms/1000).replace('.', ','); }
+function celulaResposta(m){
+  if (!m.respostas.length) return '<span class="dica">—</span>';
+  const u = m.respostas[m.respostas.length - 1];
+  const depois = m.aceitaEm ? ' · ' + duracao(Math.round((new Date(m.respostas[0].recebidaEm) - new Date(m.aceitaEm)) / 1000)) + ' depois' : '';
+  return esc(curto(u.texto)) + '<div class="dica">' + dataHora(u.recebidaEm) + depois + (m.respostas.length > 1 ? ' · ' + m.respostas.length + ' respostas' : '') + '</div>';
+}
 function curto(t){ t = String(t||''); return t.length > 70 ? t.slice(0, 70)+'…' : t; }
 function pintar(){
   const d = ultimo; if (!d) return;
@@ -793,10 +814,11 @@ function pintar(){
     + (k.incertas?'<span style="color:var(--alerta-texto)">Incertas <b>'+k.incertas+'</b>: o serviço caiu enquanto enviava; confira no celular</span>':'');
   $('kFila').textContent = parados; $('kEnviadas').textContent = k.aguardando; $('kEntregues').textContent = k.entregues; $('kFalhas').textContent = k.falhas;
   $('kCanc').textContent = k.canceladas ? k.canceladas+' cancelada(s)' : 'recusadas pelo celular ou pela operadora';
+  $('kResp').textContent = d.respostas ? d.respostas.respondidas : '—'; $('kRespDet').textContent = detalheResposta(d.respostas);
   const f = filtro();
-  const lista = d.mensagens.filter(m => f === 'todos' || (f === 'entregue' && m.entregue) || (f === 'falha' && m.falhou) || (f === 'pendente' && !m.final));
-  $('tabela').querySelector('tbody').innerHTML = lista.map(m => '<tr><td>'+(m.linha??'')+'</td><td>'+esc(m.nome||'—')+'</td><td>'+esc(m.telefone)+'</td><td>'+esc(curto(m.texto))+'</td><td>'+esc(m.chip||'')+'</td><td>'+badgeStatus(m)+(m.falhou && m.detalhe ? '<div class="dica">'+esc(m.detalhe)+'</div>' : '')+'</td><td>'+hora(m.atualizadoEm)+'</td></tr>').join('')
-    || '<tr><td colspan="7" class="vazio">Nada neste filtro.</td></tr>';
+  const lista = d.mensagens.filter(m => f === 'todos' || (f === 'entregue' && m.entregue) || (f === 'falha' && m.falhou) || (f === 'pendente' && !m.final) || (f === 'respondeu' && m.respostas.length));
+  $('tabela').querySelector('tbody').innerHTML = lista.map(m => '<tr><td>'+(m.linha??'')+'</td><td>'+esc(m.nome||'—')+'</td><td>'+esc(m.telefone)+'</td><td>'+esc(curto(m.texto))+'</td><td>'+esc(m.chip||'')+'</td><td>'+badgeStatus(m)+(m.falhou && m.detalhe ? '<div class="dica">'+esc(m.detalhe)+'</div>' : '')+'</td><td>'+celulaResposta(m)+'</td><td>'+hora(m.atualizadoEm)+'</td></tr>').join('')
+    || '<tr><td colspan="8" class="vazio">Nada neste filtro.</td></tr>';
 }
 async function carregar(){
   clearTimeout(timer);
@@ -818,7 +840,7 @@ $('btnCancelar').addEventListener('click', async () => {
 $('btnExportar').addEventListener('click', () => {
   if (!ultimo) return;
   Planilha.baixarXlsx('resultado-'+ultimo.nome.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.xlsx',
-    [['linha','nome','telefone','texto','chip','status','detalhe','atualizado']].concat(ultimo.mensagens.map(m => [m.linha??'', m.nome||'', m.telefone, m.texto||'', m.chip||'', m.rotulo, m.detalhe||'', m.atualizadoEm||''])));
+    [['linha','nome','telefone','texto','chip','status','detalhe','atualizado','resposta','respondida em']].concat(ultimo.mensagens.map(m => [m.linha??'', m.nome||'', m.telefone, m.texto||'', m.chip||'', m.rotulo, m.detalhe||'', m.atualizadoEm||'', m.respostas.map(r => r.texto).join(' | '), m.respostas.length ? m.respostas[0].recebidaEm : ''])));
 });
 carregar().catch(() => {});
 `;

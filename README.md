@@ -121,7 +121,11 @@ curl http://<mini-pc>:3000/v1/mensagens/42 -H "X-Api-Key: sms_..."
 - **Webhook do time**: quando a mensagem chega a um estado final, o worker faz `POST` com
   `{evento:"mensagem.status", id, chaveIdempotencia, disparoId, status, rotulo, entregueEm, avisoId}` e o header
   `X-SMS-Assinatura` = HMAC-SHA256 do corpo com a chave = SHA-256 (hex) da chave de API do time. Resposta 2xx confirma;
-  4xx não é repetido; erro de rede ou 5xx tenta de novo (até 5 vezes).
+  4xx não é repetido; erro de rede ou 5xx tenta de novo (até 5 vezes). Quando o contato responde, chega
+  `{evento:"mensagem.respondida", id, chaveIdempotencia, disparoId, resposta:{id, texto, recebidaEm}, avisoId}`.
+- **Respostas dos contatos**: o worker lê o inbox de cada celular a cada minuto (`GET /inbox` do sms-gate, modo Local
+  Server; `WORKER_RESPOSTAS_MS`), liga a resposta à última mensagem enviada ao telefone nos 7 dias anteriores e mostra
+  "Responderam" na Visão geral, nos disparos e em `GET /v1/metricas` (`respostas`). App antigo sem `/inbox` gera um aviso na tela.
 
 ## Operação
 

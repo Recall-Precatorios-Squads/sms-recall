@@ -28,7 +28,8 @@ export const openapi = {
     version: '1.0.0',
     description:
       'Envio de SMS pelos chips da empresa. Assíncrono: o pedido entra na fila e responde 202. ' +
-      'Status por GET ou pelo webhook do time (POST com JSON {evento:"mensagem.status", id, chaveIdempotencia, disparoId, status, rotulo, entregueEm, avisoId} ' +
+      'Status por GET ou pelo webhook do time (POST com JSON {evento:"mensagem.status", id, chaveIdempotencia, disparoId, status, rotulo, entregueEm, avisoId}; ' +
+      'quando o contato responde: {evento:"mensagem.respondida", id, chaveIdempotencia, disparoId, resposta:{id, texto, recebidaEm}, avisoId} ' +
       'e header X-SMS-Assinatura = HMAC-SHA256 do corpo, com chave = SHA-256 hex da chave de API do time). Erros: {codigo, mensagem, detalhes}. ' +
       'Envios só saem dentro da janela de envio e respeitando a cota de cada chip; status INCERTA = pode ter saído, nunca é reenviado sozinho.',
   },
@@ -64,7 +65,7 @@ export const openapi = {
           { name: 'de', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
           { name: 'ate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
         ],
-        responses: { '200': { description: 'periodo, resumo, porStatus, taxaEntrega, tempoMedioEntregaSegundos, porDia, cotaHoje' }, '422': { description: 'Período inválido', content: { 'application/json': { schema: erro } } } },
+        responses: { '200': { description: 'periodo, resumo, porStatus, taxaEntrega, tempoMedioEntregaSegundos, respostas {respondidas, base, taxaResposta, tempoMedianoRespostaSegundos, tempoMedioRespostaSegundos}, porDia, cotaHoje' }, '422': { description: 'Período inválido', content: { 'application/json': { schema: erro } } } },
       },
     },
     '/v1/mensagens/{id}': {

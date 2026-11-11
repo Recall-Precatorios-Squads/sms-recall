@@ -1,10 +1,11 @@
 // Métricas de um time na API /v1: quanto foi pedido, entregue, falhou etc., por período e por dia.
-import type { StatusMensagem } from '@prisma/client';
+import { Prisma, type StatusMensagem } from '@prisma/client';
 import { config } from '../config.js';
 import { prisma } from '../db.js';
 import { inicioDeHoje } from '../lib/tempo.js';
 import { type Grupo, contagemDe } from './disparos.js';
 import { ErroNegocio, ROTULOS } from './mensagens.js';
+import { metricaResposta } from './respostas.js';
 
 const DIA_MS = 86_400_000;
 const MAX_DIAS = 92;
@@ -29,7 +30,7 @@ export function periodo(de?: string, ate?: string): { de: string; ate: string; i
 export async function metricasDoTime(time: { id: number; cotaDiaria: number }, de?: string, ate?: string) {
   const p = periodo(de, ate);
   const onde = { timeId: time.id, criadoEm: { gte: p.inicio, lt: p.fim } };
-  const [grupos, porDia, tempo, usadasHoje] = await Promise.all([
+  const [grupos, porDia, tempo, usadasHoje, respostas] = await Promise.all([
     prisma.mensagem.groupBy({ by: ['status'], where: onde, _count: { _all: true } }),
     prisma.$queryRaw<{ dia: string; status: StatusMensagem; n: number }[]>`
       SELECT to_char(criado_em AT TIME ZONE ${config.fuso}, 'YYYY-MM-DD') AS dia, status, count(*)::int AS n
@@ -41,6 +42,7 @@ export async function metricasDoTime(time: { id: number; cotaDiaria: number }, d
         FROM mensagens
        WHERE time_id = ${time.id} AND status = 'ENTREGUE' AND criado_em >= ${p.inicio} AND criado_em < ${p.fim}`,
     prisma.mensagem.count({ where: { timeId: time.id, criadoEm: { gte: inicioDeHoje() } } }),
+    metricaResposta(Prisma.sql`m.time_id = ${time.id} AND m.criado_em >= ${p.inicio} AND m.criado_em < ${p.fim}`),
   ]);
   const resumo = contagemDe(grupos as Grupo[]);
   const finalizadas = resumo.entregues + resumo.falhas;
@@ -56,6 +58,7 @@ export async function metricasDoTime(time: { id: number; cotaDiaria: number }, d
     porStatus: Object.fromEntries(grupos.map((g) => [g.status, { quantidade: g._count._all, rotulo: ROTULOS[g.status] }])),
     taxaEntrega: finalizadas ? Math.round((resumo.entregues / finalizadas) * 1000) / 10 : null,
     tempoMedioEntregaSegundos: tempo[0]?.segundos ?? null,
+    respostas,
     porDia: [...dias.entries()].map(([dia, g]) => ({ dia, ...contagemDe(g) })),
     cotaHoje: { usadas: usadasHoje, cota: time.cotaDiaria, restante: Math.max(0, time.cotaDiaria - usadasHoje) },
   };

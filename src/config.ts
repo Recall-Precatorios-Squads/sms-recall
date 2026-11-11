@@ -44,6 +44,7 @@ export const config = {
     vigiarMs: num(e.WORKER_VIGIAR_MS, 30_000),
     ceifarMs: num(e.WORKER_CEIFAR_MS, 60_000),
     notificarMs: num(e.WORKER_NOTIFICAR_MS, 5_000),
+    respostasMs: num(e.WORKER_RESPOSTAS_MS, 60_000),
   },
 };
 
