@@ -16,7 +16,7 @@ Acesso: **`http://RECALL-0169:3000`** · documentação da API: **`http://RECALL
 
 ### No PC de desenvolvimento
 
-1. Código commitado e testes verdes (o script roda `npm test` e para se falhar).
+1. Código commitado e testes verdes: rode `npm run typecheck` e `npm test` no terminal de desenvolvimento.
 2. No **Ubuntu (WSL)**, na raiz do repositório:
    ```bash
    bash scripts/gerar-pacote.sh

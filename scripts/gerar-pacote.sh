@@ -13,7 +13,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "ATENÇÃO: há mudanças não commitadas. O pacote leva só o que está commitado (git archive)."; read -r -p "Continuar? [s/N] " r; [ "$r" = "s" ] || exit 1
 fi
 
-echo "== Testes"; npm test --silent
+# Testes: rode `npm test` antes, no terminal de desenvolvimento (aqui no WSL o node_modules do Windows não serve).
 echo "== Build da imagem"; docker compose -p sms-recall build migrate
 rm -rf "$SAIDA" && mkdir -p "$SAIDA/debs"
 cp instalador/instalar.sh instalador/windows.ps1 instalador/LEIA-ME.txt "$SAIDA/"
