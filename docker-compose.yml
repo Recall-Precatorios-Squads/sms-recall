@@ -43,6 +43,7 @@ services:
 
   migrate:
     build: .
+    image: sms-recall:latest
     command: ["npx", "prisma", "migrate", "deploy"]
     environment:
       DATABASE_URL: postgresql://sms:${POSTGRES_PASSWORD}@postgres:5432/sms
@@ -53,6 +54,7 @@ services:
 
   app:
     build: .
+    image: sms-recall:latest
     command: ["node", "dist/servidor.js"]
     restart: unless-stopped
     env_file: .env
@@ -82,6 +84,7 @@ services:
 
   worker:
     build: .
+    image: sms-recall:latest
     command: ["node", "dist/worker/index.js"]
     restart: unless-stopped
     env_file: .env
