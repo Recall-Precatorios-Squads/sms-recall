@@ -80,7 +80,7 @@ a{color:var(--acao-texto)}
   <h1>Como enviar SMS pela API</h1>
   <p class="apoio">Para sistemas e times da empresa (ex.: o CRM) enviarem SMS pelos chips da Recall. O envio é <b>assíncrono</b>: o pedido entra na fila e a API responde na hora; o SMS sai quando houver um chip livre.</p>
   <nav aria-label="Seções">
-    <a href="#comecar">Começar</a><a href="#enviar">Enviar uma mensagem</a><a href="#consultar">Consultar</a><a href="#lote">Enviar em lote</a>
+    <a href="#comecar">Começar</a><a href="#enviar">Enviar uma mensagem</a><a href="#consultar">Consultar</a><a href="#lote">Enviar em lote</a><a href="#metricas">Métricas</a>
     <a href="#status">Status</a><a href="#erros">Erros</a><a href="#webhook">Webhook</a><a href="#limites">Limites</a><a href="/v1/openapi.json">openapi.json</a>
   </nav>
 </header>
@@ -179,8 +179,35 @@ const mensagem = await r.json(); // 202 (nova) ou 200 (já existia com essa Idem
   <p class="apoio"><code>GET /v1/disparos/{id}</code> devolve esse resumo atualizado. <code>POST /v1/disparos/{id}/cancelar</code> cancela o que ainda não saiu (o que já saiu segue o curso).</p>
 </section>
 
+
+<section class="card" id="metricas">
+  <div class="endpoint"><span class="metodo get">GET</span><span class="rota">/v1/metricas</span><span class="metodo get">GET</span><span class="rota">/v1/mensagens</span></div>
+  <h2>5. Métricas e lista do seu time</h2>
+  <p class="apoio">Quanto o seu time enviou, quanto foi entregue, quanto falhou e quanto ainda está na fila. Só as mensagens do seu time. Período por <code>?de=AAAA-MM-DD&amp;ate=AAAA-MM-DD</code> (horário de Brasília; padrão: hoje; até 92 dias).</p>
+  ${codigo(`curl "${base}/v1/metricas?de=2026-11-01&ate=2026-11-11" -H "X-Api-Key: sms_SUA_CHAVE"`)}
+  <h3>Resposta</h3>
+  ${codigo(`{
+  "periodo": { "de": "2026-11-01", "ate": "2026-11-11" },
+  "resumo": { "total": 120, "naFila": 3, "enviando": 0, "aguardando": 2, "entregues": 110, "falhas": 4, "canceladas": 0, "incertas": 1 },
+  "porStatus": { "ENTREGUE": { "quantidade": 108, "rotulo": "Entregue" }, "FALHOU": { "quantidade": 4, "rotulo": "Falhou" } },
+  "taxaEntrega": 96.5,
+  "tempoMedioEntregaSegundos": 42,
+  "porDia": [ { "dia": "2026-11-10", "total": 60, "entregues": 57, "falhas": 2, "naFila": 0, "enviando": 0, "aguardando": 0, "canceladas": 0, "incertas": 1 } ],
+  "cotaHoje": { "usadas": 60, "cota": 1000, "restante": 940 }
+}`)}
+  <ul>
+    <li><b>taxaEntrega</b>: entregues ÷ (entregues + falhas), em %. Mensagens ainda na fila ou aguardando não entram.</li>
+    <li><b>entregues</b> inclui <code>SEM_CONFIRMACAO</code> (saiu, sem relatório da operadora).</li>
+    <li><b>cotaHoje</b>: quanto o seu time já pediu hoje e quanto ainda pode pedir.</li>
+  </ul>
+  <h3>Quais falharam? Lista paginada</h3>
+  ${codigo(`curl "${base}/v1/mensagens?status=FALHOU&de=2026-11-01&ate=2026-11-11&page=1&size=50" -H "X-Api-Key: sms_SUA_CHAVE"
+# { "data": [ { "id": 31, "status": "FALHOU", "detalhe": "falhou 3 vez(es); última: ...", ... } ], "page": 1, "size": 50, "total": 4 }`)}
+  <p class="apoio">Filtros: <code>status</code> (qualquer um da tabela de status), <code>de</code>, <code>ate</code>, <code>page</code>, <code>size</code> (até 200).</p>
+</section>
+
 <section class="card" id="status">
-  <h2>5. Status da mensagem</h2>
+  <h2>6. Status da mensagem</h2>
   <div class="tabela"><table>
     <thead><tr><th>status</th><th>rotulo</th><th>Significa</th></tr></thead>
     <tbody>${linhasStatus}</tbody>
@@ -189,7 +216,7 @@ const mensagem = await r.json(); // 202 (nova) ou 200 (já existia com essa Idem
 </section>
 
 <section class="card" id="erros">
-  <h2>6. Erros</h2>
+  <h2>7. Erros</h2>
   <p class="apoio">Sempre no formato <code>{ "codigo": "...", "mensagem": "...", "detalhes": {} }</code>. A <code>mensagem</code> é em português e pode ser mostrada para o usuário.</p>
   <div class="tabela"><table>
     <thead><tr><th>HTTP</th><th>codigo</th><th>Quando</th><th>O que fazer</th></tr></thead>
@@ -201,6 +228,7 @@ const mensagem = await r.json(); // 202 (nova) ou 200 (já existia com essa Idem
       <tr><td>422</td><td><code>IDEMPOTENCY_KEY_INVALIDA</code></td><td>Idempotency-Key vazia ou com mais de 100 caracteres</td><td>Use um identificador curto e único</td></tr>
       <tr><td>429</td><td><code>COTA_DO_TIME</code></td><td>Seu time passou da cota do dia</td><td>Tente amanhã ou peça aumento de cota</td></tr>
       <tr><td>404</td><td><code>NAO_ENCONTRADA</code> / <code>NAO_ENCONTRADO</code></td><td>Id inexistente ou de outro time</td><td>Confira o id</td></tr>
+      <tr><td>422</td><td><code>PERIODO_INVALIDO</code> / <code>PERIODO_LONGO</code></td><td>Data final antes da inicial, ou mais de 92 dias</td><td>Ajuste o período</td></tr>
       <tr><td>409</td><td><code>JA_TERMINOU</code></td><td>Cancelar um disparo que já terminou</td><td>Nada a fazer</td></tr>
       <tr><td>500</td><td><code>ERRO_INTERNO</code></td><td>Falha do serviço</td><td>Repita com a MESMA Idempotency-Key; mande o <code>requestId</code> para a TI</td></tr>
     </tbody>
@@ -208,7 +236,7 @@ const mensagem = await r.json(); // 202 (nova) ou 200 (já existia com essa Idem
 </section>
 
 <section class="card" id="webhook">
-  <h2>7. Webhook: ser avisado em vez de perguntar</h2>
+  <h2>8. Webhook: ser avisado em vez de perguntar</h2>
   <p class="apoio">Se o seu time tem uma URL de webhook cadastrada, quando a mensagem chega a um status final (<code>ENTREGUE</code>, <code>FALHOU</code>, <code>INCERTA</code>, <code>CANCELADA</code>, <code>SEM_CONFIRMACAO</code>) o serviço faz um <b>POST</b> nela:</p>
   ${codigo(`POST https://seu-sistema/webhooks/sms
 Content-Type: application/json
@@ -242,7 +270,7 @@ function assinaturaValida(corpoCru, assinaturaRecebida, chaveDeApi) {
 </section>
 
 <section class="card" id="limites">
-  <h2>8. Limites e regras de envio</h2>
+  <h2>9. Limites e regras de envio</h2>
   <div class="tabela"><table>
     <thead><tr><th>Regra</th><th>Valor</th><th>Efeito</th></tr></thead>
     <tbody>

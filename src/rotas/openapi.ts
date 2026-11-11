@@ -36,6 +36,17 @@ export const openapi = {
   security: [{ chave: [] }],
   paths: {
     '/v1/mensagens': {
+      get: {
+        summary: 'Lista paginada das mensagens do time',
+        parameters: [
+          { name: 'status', in: 'query', required: false, schema: status },
+          { name: 'de', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'ate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'page', in: 'query', required: false, schema: { type: 'integer', default: 1 } },
+          { name: 'size', in: 'query', required: false, schema: { type: 'integer', default: 50, maximum: 200 } },
+        ],
+        responses: { '200': { description: '{ data: [mensagem], page, size, total, periodo }' } },
+      },
       post: {
         summary: 'Envia uma mensagem',
         parameters: [{ name: 'Idempotency-Key', in: 'header', required: false, schema: { type: 'string', maxLength: 100 }, description: 'Repetir o pedido com a mesma chave devolve a mesma mensagem (200), nunca cria outra.' }],
@@ -44,6 +55,16 @@ export const openapi = {
           content: { 'application/json': { schema: { type: 'object', required: ['telefone', 'texto'], properties: { telefone: { type: 'string', example: '51999991234' }, texto: { type: 'string', maxLength: 640, example: 'Ola {nome}, aqui e da Recall.' }, nome: { type: 'string' } } } } },
         },
         responses: { '202': { description: 'Na fila', content: { 'application/json': { schema: mensagem } } }, '200': { description: 'Já existia (mesma Idempotency-Key)', content: { 'application/json': { schema: mensagem } } }, ...respostasErro },
+      },
+    },
+    '/v1/metricas': {
+      get: {
+        summary: 'Métricas do time no período (padrão: hoje)',
+        parameters: [
+          { name: 'de', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+          { name: 'ate', in: 'query', required: false, schema: { type: 'string', format: 'date' } },
+        ],
+        responses: { '200': { description: 'periodo, resumo, porStatus, taxaEntrega, tempoMedioEntregaSegundos, porDia, cotaHoje' }, '422': { description: 'Período inválido', content: { 'application/json': { schema: erro } } } },
       },
     },
     '/v1/mensagens/{id}': {

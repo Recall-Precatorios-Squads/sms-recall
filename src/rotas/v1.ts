@@ -11,6 +11,7 @@ import { registrarEvento } from '../servicos/eventos.js';
 import { ErroNegocio, ROTULOS, bloqueadosEntre } from '../servicos/mensagens.js';
 import { paginaDocs } from './docs.js';
 import { openapi } from './openapi.js';
+import { metricasDoTime, periodo } from '../servicos/metricas.js';
 
 type Time = NonNullable<Awaited<ReturnType<typeof timePorChave>>>;
 declare module 'fastify' {
@@ -34,6 +35,14 @@ const esquemaDisparo = z.object({
   intervaloMaxSegundos: z.number().min(LIMITES.intervaloMin).max(LIMITES.intervaloMax).default(80),
 });
 const chaveIdempotencia = z.string().trim().min(1).max(100);
+const data = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, 'use a data no formato AAAA-MM-DD');
+const esquemaPeriodo = z.object({ de: data.optional(), ate: data.optional() });
+const STATUS = ['PENDENTE', 'RESERVADA', 'ENVIANDO', 'ACEITA', 'ENVIADA', 'ENTREGUE', 'FALHOU', 'INCERTA', 'CANCELADA', 'SEM_CONFIRMACAO'] as const;
+const esquemaLista = esquemaPeriodo.extend({
+  status: z.enum(STATUS).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  size: z.coerce.number().int().min(1).max(200).default(50),
+});
 
 function dtoMensagem(m: { id: number; status: keyof typeof ROTULOS; chaveIdempotencia: string | null; disparoId: number | null; criadoEm: Date; atualizadoEm: Date; entregueEm: Date | null; detalhe: string | null }) {
   return { id: m.id, status: m.status, rotulo: ROTULOS[m.status], chaveIdempotencia: m.chaveIdempotencia, disparoId: m.disparoId, criadoEm: m.criadoEm, atualizadoEm: m.atualizadoEm, entregueEm: m.entregueEm, detalhe: m.detalhe };
@@ -83,6 +92,26 @@ export async function rotasV1(app: FastifyInstance): Promise<void> {
       }
       throw e;
     }
+  });
+
+  /** Lista paginada das mensagens do time, com filtro por status e período (datas no fuso de Brasília). */
+  app.get('/v1/mensagens', async (req, reply) => {
+    const q = esquemaLista.safeParse(req.query ?? {});
+    if (!q.success) return erro(reply, 422, 'DADOS_INVALIDOS', q.error.issues[0]?.message ?? 'Filtro inválido.');
+    const p = periodo(q.data.de, q.data.ate);
+    const where = { timeId: (req.time as Time).id, criadoEm: { gte: p.inicio, lt: p.fim }, ...(q.data.status ? { status: q.data.status } : {}) };
+    const [total, lista] = await Promise.all([
+      prisma.mensagem.count({ where }),
+      prisma.mensagem.findMany({ where, select: SELECT_MSG, orderBy: { id: 'desc' }, skip: (q.data.page - 1) * q.data.size, take: q.data.size }),
+    ]);
+    return { data: lista.map(dtoMensagem), page: q.data.page, size: q.data.size, total, periodo: { de: p.de, ate: p.ate } };
+  });
+
+  /** Métricas do time: quanto foi pedido, entregue, falhou etc., no período (padrão: hoje). */
+  app.get('/v1/metricas', async (req, reply) => {
+    const q = esquemaPeriodo.safeParse(req.query ?? {});
+    if (!q.success) return erro(reply, 422, 'DADOS_INVALIDOS', q.error.issues[0]?.message ?? 'Período inválido.');
+    return metricasDoTime(req.time as Time, q.data.de, q.data.ate);
   });
 
   app.get('/v1/mensagens/:id', async (req, reply) => {

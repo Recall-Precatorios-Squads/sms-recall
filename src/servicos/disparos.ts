@@ -112,9 +112,9 @@ export async function cancelarDisparo(id: number, quem: { id: number | null; nom
   return { mensagem: 'Disparo cancelado: as mensagens que ainda não saíram não serão enviadas.' };
 }
 
-type Grupo = { status: StatusMensagem; _count: { _all: number } };
+export type Grupo = { status: StatusMensagem; _count: { _all: number } };
 
-function contagemDe(grupos: Grupo[]) {
+export function contagemDe(grupos: Grupo[]) {
   const c = { total: 0, naFila: 0, enviando: 0, aguardando: 0, entregues: 0, falhas: 0, canceladas: 0, incertas: 0 };
   for (const g of grupos) {
     const n = g._count._all;

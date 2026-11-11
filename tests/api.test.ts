@@ -156,3 +156,49 @@ describe('API /v1 dos times', () => {
     expect(r.json()).toMatchObject({ total: 2, time: 'CRM', criadoPor: null });
   });
 });
+
+describe('API /v1: métricas e lista do time', () => {
+  async function timeComChave(): Promise<{ chave: string; id: number }> {
+    const r = await app.inject({ method: 'POST', url: '/api/times', headers: { cookie: admin }, payload: { nome: 'Cobrança', cotaDiaria: 100, prioridade: 0 } });
+    return { chave: r.json().chave as string, id: r.json().time.id as number };
+  }
+
+  it('métricas: conta por status, taxa de entrega, tempo médio, por dia e cota de hoje; só do próprio time', async () => {
+    const { chave, id } = await timeComChave();
+    const agora = Date.now();
+    await prisma.mensagem.createMany({
+      data: [
+        { telefone: '+5511999990001', texto: 'a', timeId: id, status: 'ENTREGUE', entregueEm: new Date(agora + 20_000) },
+        { telefone: '+5511999990002', texto: 'b', timeId: id, status: 'ENTREGUE', entregueEm: new Date(agora + 40_000) },
+        { telefone: '+5511999990003', texto: 'c', timeId: id, status: 'FALHOU' },
+        { telefone: '+5511999990004', texto: 'd', timeId: id, status: 'PENDENTE' },
+        { telefone: '+5511999990005', texto: 'e', status: 'ENTREGUE' }, // de fora do time: não conta
+      ],
+    });
+    const r = await app.inject({ method: 'GET', url: '/v1/metricas', headers: { 'x-api-key': chave } });
+    expect(r.statusCode).toBe(200);
+    const m = r.json();
+    expect(m.resumo).toMatchObject({ total: 4, entregues: 2, falhas: 1, naFila: 1 });
+    expect(m.taxaEntrega).toBeCloseTo(66.7, 1);
+    expect(m.tempoMedioEntregaSegundos).toBeGreaterThan(20);
+    expect(m.porDia).toHaveLength(1);
+    expect(m.porStatus.FALHOU).toEqual({ quantidade: 1, rotulo: 'Falhou' });
+    expect(m.cotaHoje).toEqual({ usadas: 4, cota: 100, restante: 96 });
+  });
+
+  it('lista: filtra por status, pagina e não mostra mensagem de outro time', async () => {
+    const { chave, id } = await timeComChave();
+    await prisma.mensagem.createMany({
+      data: [
+        { telefone: '+5511999990001', texto: 'a', timeId: id, status: 'FALHOU', detalhe: 'recusada pela operadora' },
+        { telefone: '+5511999990002', texto: 'b', timeId: id, status: 'ENTREGUE' },
+        { telefone: '+5511999990003', texto: 'c', status: 'FALHOU' },
+      ],
+    });
+    const r = await app.inject({ method: 'GET', url: '/v1/mensagens?status=FALHOU&size=10', headers: { 'x-api-key': chave } });
+    expect(r.json()).toMatchObject({ total: 1, page: 1, size: 10 });
+    expect(r.json().data[0]).toMatchObject({ status: 'FALHOU', detalhe: 'recusada pela operadora' });
+    expect((await app.inject({ method: 'GET', url: '/v1/metricas?de=2026-01-31&ate=2026-01-01', headers: { 'x-api-key': chave } })).json().codigo).toBe('PERIODO_INVALIDO');
+    expect((await app.inject({ method: 'GET', url: '/v1/metricas?de=ontem', headers: { 'x-api-key': chave } })).statusCode).toBe(422);
+  });
+});
