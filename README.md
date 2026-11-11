@@ -148,7 +148,7 @@ docker compose start app worker
 
 - Texto **sem acento** quando possível: acento muda a codificação e cada SMS passa a ser cobrado como 2.
 - Mantenha o intervalo de 45 a 80 s e a cota por chip: é o que evita bloqueio da operadora.
-- As telas são para a **rede interna**. Pelo túnel, exponha só `/v1/*`.
+- Telas e API são só para a **rede interna**. Não exponha a porta na internet.
 - O socket do Docker é montado só-leitura no Traefik (para ele descobrir as réplicas). Não exponha a porta do Traefik na internet.
 - Telefone aparece mascarado na tela e nos logs; o texto das mensagens não vai para o log.
 
