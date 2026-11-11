@@ -6,7 +6,7 @@ TypeScript (strict) · Fastify 5 · Zod · Prisma 6 · PostgreSQL 16 · Traefik 
 
 - **Operadores** entram com login, enviam a planilha de contatos, escolhem as abordagens (roleta de até 20 textos)
   e o intervalo, e acompanham a entrega de cada mensagem.
-- **Outros sistemas e times** (ex.: o CRM) enviam pela **API `/v1`**, com chave própria, cota e prioridade.
+- **Sistemas e times internos** enviam pela **API `/v1`**, com chave própria, cota e prioridade (uso só na rede da empresa).
 - **A TI** cadastra celulares e chips, acompanha a revisão, os bloqueios e os logs, e recebe **alertas**.
 
 > **Mini PC (produção): como atualizar e operar → [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md).**
@@ -16,7 +16,7 @@ TypeScript (strict) · Fastify 5 · Zod · Prisma 6 · PostgreSQL 16 · Traefik 
 
 ```
 Navegador (rede interna) ─┐
-CRM / times (/v1) ─ túnel ─┼─► traefik :PORTA ──► app ×2 (telas, /api, /v1) ──► PostgreSQL
+Sistemas internos (/v1) ──┼─► traefik :PORTA ──► app ×2 (telas, /api, /v1) ──► PostgreSQL
                            │      health check        não envia: grava na fila      ▲  mensagens = FILA
                            │                                                        │  outboxes: alertas, avisos
                            │                          worker ───────────────────────┘
@@ -35,7 +35,7 @@ CRM / times (/v1) ─ túnel ─┼─► traefik :PORTA ──► app ×2 (tela
 | **postgres** | Tudo. A tabela `mensagens` é a fila; `alertas` e `avisos` são outboxes |
 | **migrate** | Aplica as migrações e sai |
 | **backup** | `pg_dump` diário em `./backups` (14 dias) |
-| **tunel** (opcional) | Cloudflare Tunnel para o CRM (na AWS) chegar à `/v1` sem abrir porta no escritório |
+| **tunel** (não usado) | Perfil opcional do compose; a API é só interna, então fica desligado |
 
 ## Regras de envio
 
@@ -102,7 +102,7 @@ Geram alerta: celular fora do ar, chip pausado por falhas, mensagem incerta, bac
 4. **Aparelhos e chips** → *Adicionar celular*: `http://<ip-do-celular>:8080` (`CELULAR_URL_PADRAO` já preenche), usuário e senha.
 5. **Testar conexão** (não envia SMS): deve mostrar os chips e a bateria.
 
-## API `/v1` para outros sistemas (ex.: CRM)
+## API `/v1` para sistemas internos
 
 Contrato completo em `GET /v1/openapi.json`. Na tela **Times (API)** o administrador cria o time e recebe a chave
 (mostrada uma vez), com cota diária, prioridade e, se quiser, a URL de webhook.
@@ -122,8 +122,6 @@ curl http://<mini-pc>:3000/v1/mensagens/42 -H "X-Api-Key: sms_..."
   `{evento:"mensagem.status", id, chaveIdempotencia, disparoId, status, rotulo, entregueEm, avisoId}` e o header
   `X-SMS-Assinatura` = HMAC-SHA256 do corpo com a chave = SHA-256 (hex) da chave de API do time. Resposta 2xx confirma;
   4xx não é repetido; erro de rede ou 5xx tenta de novo (até 5 vezes).
-- Para o CRM (AWS) chegar ao mini PC: `TUNNEL_TOKEN` no `.env`, `docker compose --profile tunel up -d`, e no painel da
-  Cloudflare aponte o hostname para `http://traefik:80` liberando **só `/v1/*`**. As telas ficam na rede interna.
 
 ## Operação
 
