@@ -52,6 +52,7 @@ model Usuario {
   sessoes   Sessao[]
   disparos  Disparo[]
   eventos   Evento[]
+  bloqueios Bloqueio[]
 
   @@map("usuarios")
 }
@@ -96,6 +97,7 @@ model Chip {
   presente       Boolean    @default(true)
   proximoEnvioEm DateTime   @default(now()) @map("proximo_envio_em") @db.Timestamptz(3)
   falhasSeguidas Int        @default(0) @map("falhas_seguidas")
+  cotaDiaria     Int?       @map("cota_diaria")
   criadoEm       DateTime   @default(now()) @map("criado_em") @db.Timestamptz(3)
   mensagens      Mensagem[]
   eventos        Evento[]
@@ -107,8 +109,11 @@ model Chip {
 model Disparo {
   id             Int           @id @default(autoincrement())
   nome           String
-  criadoPorId    Int           @map("criado_por_id")
-  criadoPor      Usuario       @relation(fields: [criadoPorId], references: [id])
+  criadoPorId    Int?          @map("criado_por_id")
+  criadoPor      Usuario?      @relation(fields: [criadoPorId], references: [id])
+  timeId         Int?          @map("time_id")
+  time           Time?         @relation(fields: [timeId], references: [id])
+  bloqueados     Int           @default(0)
   status         StatusDisparo @default(ENVIANDO)
   intervaloMinMs Int           @map("intervalo_min_ms")
   intervaloMaxMs Int           @map("intervalo_max_ms")
@@ -121,14 +126,21 @@ model Disparo {
   eventos        Evento[]
 
   @@index([criadoPorId])
+  @@index([timeId])
   @@index([status])
   @@map("disparos")
 }
 
 model Mensagem {
   id                 Int            @id @default(autoincrement())
-  disparoId          Int            @map("disparo_id")
-  disparo            Disparo        @relation(fields: [disparoId], references: [id])
+  disparoId          Int?           @map("disparo_id")
+  disparo            Disparo?       @relation(fields: [disparoId], references: [id])
+  timeId             Int?           @map("time_id")
+  time               Time?          @relation(fields: [timeId], references: [id])
+  chaveIdempotencia  String?        @map("chave_idempotencia")
+  prioridade         Int            @default(0)
+  intervaloMinMs     Int?           @map("intervalo_min_ms")
+  intervaloMaxMs     Int?           @map("intervalo_max_ms")
   linha              Int?
   telefone           String
   nome               String?
@@ -148,9 +160,13 @@ model Mensagem {
   criadoEm           DateTime       @default(now()) @map("criado_em") @db.Timestamptz(3)
   atualizadoEm       DateTime       @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
 
+  avisos             Aviso[]
+
+  @@unique([timeId, chaveIdempotencia])
   @@index([status, proximaTentativaEm])
   @@index([disparoId])
-  @@index([chipId])
+  @@index([chipId, enviandoEm])
+  @@index([timeId, criadoEm])
   @@map("mensagens")
 }
 
@@ -166,10 +182,103 @@ model Evento {
   usuarioId Int?        @map("usuario_id")
   usuario   Usuario?    @relation(fields: [usuarioId], references: [id])
   criadoEm  DateTime    @default(now()) @map("criado_em") @db.Timestamptz(3)
+  alerta    Alerta?
 
   @@index([criadoEm])
   @@index([disparoId])
   @@index([chipId])
   @@index([usuarioId])
   @@map("eventos")
+}
+
+enum StatusEntrega {
+  PENDENTE
+  ENVIADO
+  FALHOU
+}
+
+/// Time (sistema ou área) que usa a API /v1 com a própria chave.
+model Time {
+  id           Int        @id @default(autoincrement())
+  nome         String     @unique
+  chaveHash    String     @unique @map("chave_hash")
+  chavePrefixo String     @map("chave_prefixo")
+  cotaDiaria   Int        @default(1000) @map("cota_diaria")
+  prioridade   Int        @default(0)
+  ativo        Boolean    @default(true)
+  webhookUrl   String?    @map("webhook_url")
+  criadoEm     DateTime   @default(now()) @map("criado_em") @db.Timestamptz(3)
+  disparos     Disparo[]
+  mensagens    Mensagem[]
+  avisos       Aviso[]
+
+  @@map("times")
+}
+
+/// Telefone que não recebe mais SMS (pediu para sair, número errado...).
+model Bloqueio {
+  id          Int      @id @default(autoincrement())
+  telefone    String   @unique
+  motivo      String
+  criadoPorId Int?     @map("criado_por_id")
+  criadoPor   Usuario? @relation(fields: [criadoPorId], references: [id])
+  criadoEm    DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([criadoPorId])
+  @@map("bloqueios")
+}
+
+/// Outbox de alertas: gravado junto com o evento; o worker envia (Telegram e/ou webhook) com nova tentativa.
+model Alerta {
+  id                 Int           @id @default(autoincrement())
+  eventoId           Int           @unique @map("evento_id")
+  evento             Evento        @relation(fields: [eventoId], references: [id])
+  status             StatusEntrega @default(PENDENTE)
+  tentativas         Int           @default(0)
+  proximaTentativaEm DateTime      @default(now()) @map("proxima_tentativa_em") @db.Timestamptz(3)
+  enviadoEm          DateTime?     @map("enviado_em") @db.Timestamptz(3)
+  erro               String?
+
+  @@index([status, proximaTentativaEm])
+  @@map("alertas")
+}
+
+/// Outbox de avisos aos times: quando o status de uma mensagem do time muda, o worker chama o webhook do time.
+model Aviso {
+  id                 Int           @id @default(autoincrement())
+  mensagemId         Int           @map("mensagem_id")
+  mensagem           Mensagem      @relation(fields: [mensagemId], references: [id])
+  timeId             Int           @map("time_id")
+  time               Time          @relation(fields: [timeId], references: [id])
+  statusMensagem     String        @map("status_mensagem")
+  status             StatusEntrega @default(PENDENTE)
+  tentativas         Int           @default(0)
+  proximaTentativaEm DateTime      @default(now()) @map("proxima_tentativa_em") @db.Timestamptz(3)
+  enviadoEm          DateTime?     @map("enviado_em") @db.Timestamptz(3)
+  erro               String?
+  criadoEm           DateTime      @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([status, proximaTentativaEm])
+  @@index([mensagemId])
+  @@index([timeId])
+  @@map("avisos")
+}
+
+/// Tentativas de login erradas por IP (o limite vale para todas as réplicas do app).
+model TentativaLogin {
+  id       Int      @id @default(autoincrement())
+  ip       String
+  criadoEm DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  @@index([ip, criadoEm])
+  @@map("tentativas_login")
+}
+
+/// Batida do worker: o painel e o /health mostram se o envio está vivo.
+model BatidaWorker {
+  id       String   @id
+  ultimaEm DateTime @map("ultima_em") @db.Timestamptz(3)
+  foraDaJanela Boolean @default(false) @map("fora_da_janela")
+
+  @@map("batidas_worker")
 }
