@@ -110,6 +110,10 @@ describe('API /v1 dos times', () => {
   it('sem chave: 401; a documentação é pública', async () => {
     expect((await app.inject({ method: 'POST', url: '/v1/mensagens', payload: { telefone: '51999991234', texto: 'oi' } })).statusCode).toBe(401);
     expect((await app.inject({ method: 'GET', url: '/v1/openapi.json' })).json().openapi).toBe('3.1.0');
+    const docs = await app.inject({ method: 'GET', url: '/v1/docs' });
+    expect(docs.statusCode).toBe(200);
+    expect(docs.body).toContain('/v1/mensagens');
+    expect(docs.body).toContain('X-SMS-Assinatura');
   });
 
   it('envia com Idempotency-Key: o mesmo pedido duas vezes vira UMA mensagem', async () => {

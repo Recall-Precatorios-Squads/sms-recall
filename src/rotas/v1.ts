@@ -9,6 +9,7 @@ import { conferirCotaDoTime, timePorChave } from '../servicos/cadastros.js';
 import { LIMITES, cancelarDisparo, criarDisparo, resumoDisparo } from '../servicos/disparos.js';
 import { registrarEvento } from '../servicos/eventos.js';
 import { ErroNegocio, ROTULOS, bloqueadosEntre } from '../servicos/mensagens.js';
+import { paginaDocs } from './docs.js';
 import { openapi } from './openapi.js';
 
 type Time = NonNullable<Awaited<ReturnType<typeof timePorChave>>>;
@@ -42,13 +43,14 @@ const SELECT_MSG = { id: true, status: true, chaveIdempotencia: true, disparoId:
 export async function rotasV1(app: FastifyInstance): Promise<void> {
   app.decorateRequest('time', null);
   app.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (req.url.startsWith('/v1/openapi.json')) return;
+    if (req.url.startsWith('/v1/openapi.json') || req.url.startsWith('/v1/docs')) return;
     const chave = req.headers['x-api-key'];
     req.time = await timePorChave(typeof chave === 'string' ? chave : undefined);
     if (!req.time) return erro(reply, 401, 'CHAVE_INVALIDA', 'Envie a chave do time no header X-Api-Key.');
   });
 
   app.get('/v1/openapi.json', async () => openapi);
+  app.get('/v1/docs', async (req, reply) => reply.type('text/html; charset=utf-8').send(paginaDocs()));
 
   /** Uma mensagem. Com Idempotency-Key, repetir o pedido devolve a mesma mensagem (nunca cria outra). */
   app.post('/v1/mensagens', async (req, reply) => {
