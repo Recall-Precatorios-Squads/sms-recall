@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 // A fila de mensagens: reservar com SKIP LOCKED, enviar pelo celular, acompanhar a entrega, recuperar órfãs.
 // Garantia "no máximo uma vez": a mensagem fica ENVIANDO (gravado e confirmado no banco) ANTES de chamar o
 // celular. Se o processo cair depois disso, ela nunca é reenviada sozinha — vira INCERTA.
@@ -71,7 +72,9 @@ export async function reservarEnvio(chipId: number): Promise<Reserva | null> {
 export async function enviarReservada({ mensagem, chip }: Reserva): Promise<void> {
   const rotulo = rotuloChip(chip);
   try {
-    const r = await gate.enviar(credenciais(chip.aparelho), { id: `sms-${mensagem.id}`, texto: mensagem.texto, e164: mensagem.telefone, simNumero: chip.simNumero });
+    // Um id único por TENTATIVA: o app recusa id repetido ("Message with the same ID already exists"),
+    // e os ids do banco recomeçam quando ele é zerado; o trecho aleatório evita colisão com o histórico do celular.
+    const r = await gate.enviar(credenciais(chip.aparelho), { id: `sms-${mensagem.id}-${mensagem.tentativas}-${randomUUID().slice(0, 8)}`, texto: mensagem.texto, e164: mensagem.telefone, simNumero: chip.simNumero });
     await atualizarMensagem(mensagem.id, { status: r.estado === 'ENTREGUE' ? 'ENTREGUE' : 'ACEITA', idExterno: r.idExterno, aceitaEm: new Date() });
     log('sms.aceito', { mensagemId: mensagem.id, chipId: chip.id, para: mascarar(mensagem.telefone) });
   } catch (e) {

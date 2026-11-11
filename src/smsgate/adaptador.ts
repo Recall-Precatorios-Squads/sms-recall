@@ -146,6 +146,8 @@ export async function chips(ap: Credenciais): Promise<ChipInformado[]> {
 /** Envia um SMS pelo chip `simNumero`. */
 export async function enviar(ap: Credenciais, msg: { id: string; texto: string; e164: string; simNumero: number }): Promise<{ idExterno: string; estado: EstadoEnvio }> {
   if (config.simulado) {
+    // Igual ao app real: id repetido é recusado.
+    if (simuladas.has(msg.id)) throw new ErroGate('RECUSADO', 'Message with the same ID already exists', 400);
     const falhar = /^\+?5511900000/.test(msg.e164); // números +55 11 90000-xxxx falham no ensaio
     simuladas.set(msg.id, { em: Date.now(), falhar });
     return { idExterno: msg.id, estado: 'ACEITA' };

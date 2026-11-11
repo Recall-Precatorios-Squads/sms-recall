@@ -82,6 +82,14 @@ describe('fila', () => {
     expect(m.status).toBe('PENDENTE');
     expect(m.chipId).toBeNull();
     expect((await prisma.disparo.findUniqueOrThrow({ where: { id: d.id } })).status).toBe('ENVIANDO');
+    // A nova tentativa sai com OUTRO id e o celular aceita (o app recusa id repetido: "same ID already exists").
+    await prisma.mensagem.updateMany({ data: { proximaTentativaEm: new Date(Date.now() - 1000) } });
+    await prisma.chip.updateMany({ data: { proximoEnvioEm: new Date(Date.now() - 1000) } });
+    expect(await cicloDeEnvio(MEIO_DIA)).toBe(1);
+    const nova = await prisma.mensagem.findFirstOrThrow();
+    expect(nova.status).toBe('ACEITA');
+    expect(nova.tentativas).toBe(2);
+    expect(nova.idExterno).toMatch(/^sms-\d+-2-[0-9a-f]{8}$/);
   });
 
   it('entrega confirmada vira ENTREGUE e, se a mensagem é de um time com webhook, gera aviso na outbox', async () => {
