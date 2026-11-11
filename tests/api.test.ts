@@ -202,3 +202,16 @@ describe('API /v1: métricas e lista do time', () => {
     expect((await app.inject({ method: 'GET', url: '/v1/metricas?de=ontem', headers: { 'x-api-key': chave } })).statusCode).toBe(422);
   });
 });
+
+describe('alertas na tela', () => {
+  it('lista só ERRO e AVISO importantes das últimas 24 h, o mais novo primeiro', async () => {
+    const { registrarEvento } = await import('../src/servicos/eventos.js');
+    await registrarEvento({ tipo: 'login', nivel: 'INFO', texto: 'entrou' });
+    await registrarEvento({ tipo: 'disparo', nivel: 'AVISO', texto: 'cancelado' }); // aviso comum: não é alerta
+    await registrarEvento({ tipo: 'aparelho', nivel: 'AVISO', texto: 'Celular 1 não respondeu' });
+    await registrarEvento({ tipo: 'chip', nivel: 'ERRO', texto: 'Chip 1 saiu da roleta' });
+    const r = await app.inject({ method: 'GET', url: '/api/alertas', headers: { cookie: operador } });
+    expect(r.json().data.map((a: { texto: string }) => a.texto)).toEqual(['Chip 1 saiu da roleta', 'Celular 1 não respondeu']);
+    expect((await app.inject({ method: 'GET', url: '/api/alertas' })).statusCode).toBe(401);
+  });
+});

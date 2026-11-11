@@ -14,7 +14,7 @@ import { rotasV1 } from './rotas/v1.js';
 import { chipsDisponiveis, cotaEfetiva, sinalDoChip, criarAparelho, editarAparelho, editarChip, enviadosHojePorChip, listarAparelhos, testarAparelho } from './servicos/aparelhos.js';
 import { bloquear, criarTime, desbloquear, editarTime, listarBloqueios, listarTimes, trocarChave } from './servicos/cadastros.js';
 import { LIMITES, cancelarDisparo, criarDisparo, detalheDisparo, listarDisparos } from './servicos/disparos.js';
-import { registrarEvento, rotuloChip } from './servicos/eventos.js';
+import { TIPOS_ALERTA, registrarEvento, rotuloChip } from './servicos/eventos.js';
 import { ErroNegocio, listarRevisao, marcarEnviada, reprocessar } from './servicos/mensagens.js';
 import * as paginas from './web/paginas.js';
 
@@ -307,6 +307,17 @@ export async function criarApp({ logger = false }: { logger?: boolean } = {}) {
     if (d) return editarTime(id(req), d, eu(req));
   });
   app.post('/api/times/:id/nova-chave', { preHandler: exigeAdmin }, async (req) => trocarChave(id(req), eu(req)));
+
+  // ── Alertas na tela (sino e avisos em todas as páginas): ERRO e AVISO importantes das últimas 24 h ──
+  app.get('/api/alertas', { preHandler: exigeLogin }, async () => {
+    const lista = await prisma.evento.findMany({
+      where: { criadoEm: { gte: new Date(Date.now() - 24 * 3_600_000) }, OR: [{ nivel: 'ERRO' }, { nivel: 'AVISO', tipo: { in: TIPOS_ALERTA } }] },
+      orderBy: { id: 'desc' },
+      take: 50,
+      include: { chip: { include: { aparelho: { select: { nome: true } } } }, usuario: { select: { nome: true } } },
+    });
+    return { data: lista.map(dtoEvento) };
+  });
 
   // ── Logs ──
   app.get('/api/eventos', { preHandler: exigeLogin }, async (req, reply) => {

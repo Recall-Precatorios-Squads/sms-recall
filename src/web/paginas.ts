@@ -20,6 +20,7 @@ const ICONES = {
   bateria: '<rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/>',
   wifi: '<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>',
   usuarios: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sino: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   sair: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>',
   revisao: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
   bloqueio: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
@@ -184,6 +185,21 @@ const CSS_EXTRA = `
 .sinal{display:inline-flex;align-items:center;gap:var(--space-1);font-size:12px;font-weight:600;white-space:nowrap}
 .sinal svg{flex:none}
 .sinal-explica{font-size:12px;color:var(--texto-secundario)}
+.sino-caixa{position:relative}
+.pilula.sino{position:relative}
+.sino-num{position:absolute;top:calc(-1 * var(--space-1));right:calc(-1 * var(--space-1));min-width:18px;height:18px;padding:0 var(--space-1);border-radius:var(--radius-full);background:var(--erro);color:var(--acao-primaria-texto);font-size:11px;font-weight:700;display:grid;place-items:center;line-height:1}
+.sino-painel{position:absolute;right:0;top:calc(100% + var(--space-2));width:min(380px,calc(100vw - 32px));background:var(--superficie);border:1px solid var(--borda-padrao);border-radius:var(--radius-lg);box-shadow:var(--sombra-menu);padding:var(--space-4);display:grid;gap:var(--space-3);z-index:20}
+.sino-cab{display:flex;justify-content:space-between;align-items:center;gap:var(--space-2);font-size:14px}
+.sino-lista{display:grid;gap:var(--space-2);max-height:360px;overflow:auto}
+.sino-item{display:grid;gap:var(--space-1);padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);font-size:12px;line-height:1.45}
+.sino-item.erro{background:var(--erro-fundo);color:var(--erro)}
+.sino-item.aviso{background:var(--alerta-fundo);color:var(--alerta-texto)}
+.sino-item.visto{background:var(--superficie-sutil);color:var(--texto-secundario)}
+.avisos-flutuantes{position:fixed;right:max(var(--space-4),env(safe-area-inset-right,0px));bottom:max(var(--space-4),env(safe-area-inset-bottom,0px));display:grid;gap:var(--space-2);z-index:30;width:min(400px,calc(100vw - 32px))}
+.aviso-flutuante{display:flex;gap:var(--space-3);align-items:flex-start;border-radius:var(--radius-md);padding:var(--space-4);box-shadow:var(--sombra-menu);font-size:14px;line-height:1.45}
+.aviso-flutuante.erro{background:var(--erro-fundo);color:var(--erro);border:1px solid var(--erro)}
+.aviso-flutuante.aviso{background:var(--alerta-fundo);color:var(--alerta-texto);border:1px solid var(--alerta-texto)}
+.aviso-flutuante button{margin-left:auto;background:none;border:0;color:inherit;cursor:pointer;font:inherit;font-size:18px;line-height:1}
 `;
 
 export const LIMITES_PADRAO = { contatos: 500, modelos: 20, caracteres: 640, intervaloMin: 1, intervaloMax: 600 };
@@ -253,6 +269,44 @@ function textoSegmentos(t){ const s = segmentos(t); return '<span>'+s.alf+'</spa
 (function(){
   const s = document.getElementById('btnSair'); if (!s) return;
   s.addEventListener('click', async () => { s.disabled = true; try { await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); } catch(e){} location.href = '/login'; });
+})();
+// Alertas na tela, em todas as páginas: sino com o número de novos + aviso no canto quando chega um alerta.
+// "Visto" fica neste navegador (cada pessoa marca os seus).
+(function(){
+  const sino = document.getElementById('btnSino'); if (!sino) return;
+  const CHAVE = 'sms-recall-alertas-visto';
+  let visto = 0; try { visto = Number(localStorage.getItem(CHAVE) || 0); } catch(e){}
+  let maiorAoAbrir = null; let ultimos = [];
+  const classe = (n) => n === 'ERRO' ? 'erro' : 'aviso';
+  const nome = (n) => n === 'ERRO' ? 'Erro' : 'Aviso';
+  function pintarSino(){
+    const novos = ultimos.filter(a => a.id > visto).length;
+    const num = $('sinoNum'); num.hidden = !novos; num.textContent = novos > 9 ? '9+' : String(novos);
+    sino.setAttribute('aria-label', novos ? novos + ' alerta(s) novo(s)' : 'Alertas');
+    $('sinoLista').innerHTML = ultimos.length
+      ? ultimos.map(a => '<div class="sino-item ' + classe(a.nivel) + (a.id <= visto ? ' visto' : '') + '"><b>' + nome(a.nivel) + ' · ' + dataHora(a.criadoEm) + '</b><span>' + esc(a.texto) + '</span></div>').join('')
+      : '<span class="dica">Nenhum alerta nas últimas 24 h.</span>';
+  }
+  function avisoNoCanto(a){
+    const box = document.createElement('div'); box.className = 'aviso-flutuante ' + classe(a.nivel); box.setAttribute('role', 'alert');
+    box.innerHTML = '<span><b>' + nome(a.nivel) + '</b> · ' + esc(a.texto) + '</span><button type="button" aria-label="Fechar aviso">×</button>';
+    box.querySelector('button').addEventListener('click', () => box.remove());
+    $('avisosFlutuantes').prepend(box); setTimeout(() => box.remove(), a.nivel === 'ERRO' ? 30000 : 15000);
+  }
+  async function buscar(){
+    try {
+      const r = await api('/api/alertas'); if (!r.ok) return;
+      ultimos = (await r.json()).data;
+      const maior = ultimos.length ? ultimos[0].id : 0;
+      if (maiorAoAbrir === null) maiorAoAbrir = maior;
+      else { ultimos.filter(a => a.id > maiorAoAbrir).reverse().forEach(avisoNoCanto); maiorAoAbrir = Math.max(maiorAoAbrir, maior); }
+      pintarSino();
+    } catch(e){}
+  }
+  sino.addEventListener('click', (e) => { e.stopPropagation(); const p = $('sinoPainel'); p.hidden = !p.hidden; sino.setAttribute('aria-expanded', String(!p.hidden)); });
+  $('sinoVisto').addEventListener('click', () => { if (ultimos.length) visto = Math.max(visto, ultimos[0].id); try { localStorage.setItem(CHAVE, String(visto)); } catch(e){} pintarSino(); });
+  document.addEventListener('click', (e) => { const caixa = document.querySelector('.sino-caixa'); if (caixa && !caixa.contains(e.target)) { $('sinoPainel').hidden = true; sino.setAttribute('aria-expanded', 'false'); } });
+  buscar(); setInterval(buscar, 15000);
 })();
 `;
 
@@ -334,12 +388,21 @@ ${cabecaHtml(titulo, extraHead)}
       </div>
       <div class="pilulas">
         ${acoes}
+        <div class="sino-caixa">
+          <button class="pilula sino" type="button" id="btnSino" aria-label="Alertas" aria-expanded="false">${icone('sino', 20)}<span class="sino-num" id="sinoNum" hidden></span></button>
+          <div class="sino-painel" id="sinoPainel" hidden>
+            <div class="sino-cab"><b>Alertas das últimas 24 h</b><button class="botao secundario pequeno" type="button" id="sinoVisto">Marcar como vistos</button></div>
+            <div class="sino-lista" id="sinoLista"><span class="dica">Carregando…</span></div>
+            <a class="dica" href="/logs">Ver todos os logs</a>
+          </div>
+        </div>
         <button class="pilula" type="button" id="btnTema" aria-label="Trocar tema"></button>
       </div>
     </div>
     ${corpo}
   </main>
 </div>
+<div class="avisos-flutuantes" id="avisosFlutuantes" aria-live="polite"></div>
 <script>${SCRIPT_COMUM}${script}</script>
 </body></html>`;
 }

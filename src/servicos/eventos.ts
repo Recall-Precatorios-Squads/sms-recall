@@ -21,9 +21,11 @@ export interface ChipRotulavel {
   aparelho?: { nome: string } | null;
 }
 
-/** Quais eventos viram alerta: todo ERRO, e AVISO de celular, chip, envio e backup. */
+/** Tipos de AVISO que viram alerta (todo ERRO também vira). */
+export const TIPOS_ALERTA = ['aparelho', 'chip', 'envio', 'backup', 'worker'];
+
 export function geraAlerta(nivel: NivelEvento, tipo: string): boolean {
-  return nivel === 'ERRO' || (nivel === 'AVISO' && ['aparelho', 'chip', 'envio', 'backup', 'worker'].includes(tipo));
+  return nivel === 'ERRO' || (nivel === 'AVISO' && TIPOS_ALERTA.includes(tipo));
 }
 
 export async function registrarEvento({ tipo, nivel = 'INFO', texto, disparoId = null, chipId = null, usuarioId = null }: NovoEvento, db: Db = prisma) {
