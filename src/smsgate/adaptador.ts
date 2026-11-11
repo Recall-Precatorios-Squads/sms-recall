@@ -102,14 +102,20 @@ export async function saude(ap: Credenciais): Promise<Saude> {
   if (config.simulado) return { online: true, bateria: 80, carregando: true, internet: true, detalhe: 'simulado' };
   try {
     const { res, json } = await chamar(ap, '/health');
-    if (!res.ok) return { online: false, detalhe: `respondeu HTTP ${res.status}` };
+    // O app responde HTTP 500 quando algum check está "fail" (ex.: houve SMS com falha na operadora),
+    // mas o celular está no ar e enviando. Com corpo de health válido, o celular está ONLINE; o 500 vira aviso.
+    const temHealth = typeof json.status === 'string' && typeof json.checks === 'object' && json.checks !== null;
+    if (!res.ok && !temHealth) return { online: false, detalhe: `respondeu HTTP ${res.status}` };
     const c = (json.checks ?? {}) as Json;
+    const avisos = Object.entries(c)
+      .filter(([, v]) => (v as Json)?.status && (v as Json).status !== 'pass')
+      .map(([nome, v]) => `${nome}=${(v as Json).observedValue ?? (v as Json).status}`);
     return {
       online: true,
       bateria: c['battery:level']?.observedValue ?? null,
       carregando: c['battery:charging'] ? c['battery:charging'].observedValue > 0 : null,
       internet: c['connection:status'] ? c['connection:status'].observedValue === 1 : null,
-      detalhe: typeof json.status === 'string' ? json.status : null,
+      detalhe: avisos.length ? `${json.status}: ${avisos.join(', ')}` : String(json.status),
     };
   } catch (e) {
     return { online: false, detalhe: e instanceof Error ? e.message : 'sem resposta' };
