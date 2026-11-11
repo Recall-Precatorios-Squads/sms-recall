@@ -66,11 +66,11 @@ passo "6/6 Subindo"
 sudo docker compose up -d --pull never --no-build
 porta=$(grep -E '^PORTA=' .env | cut -d= -f2); porta=${porta:-3000}
 for i in $(seq 1 30); do
-  if curl -fs "http://localhost:${porta}/health" >/dev/null 2>&1; then break; fi
+  if curl --noproxy '*' -fs "http://localhost:${porta}/health" >/dev/null 2>&1; then break; fi
   sleep 3
 done
 sudo docker compose ps --format 'table {{.Service}}\t{{.Status}}'
-if curl -fs "http://localhost:${porta}/health" >/dev/null 2>&1; then
+if curl --noproxy '*' -fs "http://localhost:${porta}/health" >/dev/null 2>&1; then
   echo
   echo "PRONTO. Abra de outro computador da rede:"
   for ip in $(hostname -I); do [[ "$ip" == *.*.*.* ]] && echo "  http://${ip}:${porta}"; done
