@@ -1,0 +1,84 @@
+# sms-recall no mini PC: docker compose up -d
+# postgres → migrate (aplica as migrações e sai) → app (telas, porta 3000) + worker (envia pelos celulares) + backup diário
+name: sms-recall
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sms
+      POSTGRES_USER: sms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      TZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORTA_HOST:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sms -d sms"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://sms:${POSTGRES_PASSWORD}@postgres:5432/sms
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    command: ["node", "src/servidor.js"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sms:${POSTGRES_PASSWORD}@postgres:5432/sms
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${PORTA:-3000}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build: .
+    command: ["node", "src/worker/index.js"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://sms:${POSTGRES_PASSWORD}@postgres:5432/sms
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      MANTER_DIAS: ${BACKUP_MANTER_DIAS:-14}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

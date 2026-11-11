@@ -1,14 +1,30 @@
 {
-  "name": "servico-sms-mvp",
-  "version": "0.2.0",
+  "name": "sms-recall",
+  "version": "1.0.0",
   "private": true,
-  "description": "MVP do serviço de SMS da Recall: disparo por planilha pelos chips de celulares Android (sms-gate), com painel, roleta de chips e de mensagens, e logs",
+  "description": "Disparo de SMS pelos chips de celulares Android (app sms-gate), com fila no PostgreSQL",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "servico": "node src/supervisor.mjs",
-    "start": "node --env-file-if-exists=.env src/servidor.mjs",
-    "simular": "node src/servidor.mjs --simular",
-    "test": "node --test \"tests/*.test.mjs\""
+    "start": "node src/servidor.js",
+    "worker": "node src/worker/index.js",
+    "migrate": "prisma migrate deploy",
+    "test": "vitest run",
+    "lint:types": "node --check src/servidor.js"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@prisma/client": "^6.19.3",
+    "fastify": "^5.12.8",
+    "prisma": "^6.19.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.7"
   }
 }
