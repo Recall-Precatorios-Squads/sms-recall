@@ -98,6 +98,7 @@ Para voltar sozinho até depois de queda de energia, sem ninguém entrar: a TI l
 | `curl: (22) ... error: 407` no Ubuntu | Proxy da empresa pedindo login | Não baixe da internet: use o pacote (este guia). Para a rede interna use sempre `--noproxy '*'` |
 | `curl localhost:3000` não responde no Ubuntu | O `curl` mandou o `localhost` para o proxy | `curl --noproxy '*' http://localhost:3000/health` |
 | `404 page not found` | O Traefik subiu, mas o app ainda não está saudável | Espere 30 s; confira `docker compose ps` |
+| O seu PC está na Wi-Fi de **visitantes** (ex.: "Espaço A+ VISITANTES", IP 10.30.x.x, DNS público) | A rede de visitantes não enxerga a rede da empresa nem o nome `recall-0169` | Conecte na rede da empresa (cabo ou Wi-Fi interna) e desmarque "Conectar automaticamente" na de visitantes |
 | Navegador de outro PC: "demorou muito para responder" ou `DNS_PROBE_FINISHED_NXDOMAIN` | Mini PC suspenso (dormindo) ou Ubuntu desligado | Acorde o mini PC, aplique "O mini PC não pode dormir" e rode `Start-ScheduledTask` |
 | Abre no mini PC por `localhost` mas não pelo nome no próprio mini PC | Rede espelhada do WSL | Use `http://localhost:3000` no mini PC |
 | Outro PC com proxy não abre | O navegador manda o endereço interno para o proxy | Exceção no proxy: `recall-0169;192.168.*` (melhor: a TI coloca para todos) |

@@ -73,7 +73,8 @@ sudo docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 if curl --noproxy '*' -fs "http://localhost:${porta}/health" >/dev/null 2>&1; then
   echo
   echo "PRONTO. Abra de outro computador da rede:"
-  for ip in $(hostname -I); do [[ "$ip" == *.*.*.* ]] && echo "  http://${ip}:${porta}"; done
+  for ip in $(hostname -I); do [[ "$ip" == *.*.*.* && "$ip" != 172.1[6-9].* && "$ip" != 172.2[0-9].* && "$ip" != 172.3[01].* ]] && echo "  http://${ip}:${porta}"; done
+  echo "  http://$(hostname):${porta}"
 else
   echo
   echo "A aplicação ainda não respondeu. Veja:  cd $DESTINO && sudo docker compose logs --tail 50"
