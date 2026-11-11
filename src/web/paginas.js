@@ -685,7 +685,7 @@ export function aparelhos(ctx) {
     <h2 id="formTitulo">Adicionar celular</h2>
     <div class="grade g2">
       <div class="campo"><label for="fNome">Nome</label><input id="fNome" maxlength="60" placeholder="Ex.: Celular 1" autocomplete="off" required></div>
-      <div class="campo"><label for="fUrl">Endereço (URL)</label><input id="fUrl" placeholder="http://192.168.0.20:8080" autocomplete="off" required></div>
+      <div class="campo"><label for="fUrl">Endereço (URL)</label><input id="fUrl" placeholder="http://192.168.0.20:8080" value="${escHtml(ctx.celularUrlPadrao || '')}" autocomplete="off" required></div>
       <div class="campo"><label for="fUsuario">Usuário do app</label><input id="fUsuario" autocomplete="off" required></div>
       <div class="campo"><label for="fSenha">Senha do app</label><input id="fSenha" type="password" autocomplete="new-password"><span class="dica" id="fSenhaDica"></span></div>
     </div>

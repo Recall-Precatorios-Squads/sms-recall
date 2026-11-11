@@ -114,7 +114,7 @@ export async function criarApp({ logger = false } = {}) {
   const tela = (fn, { admin = false } = {}) => async (req, reply) => {
     if (!req.usuario) return reply.redirect('/login');
     if (admin && req.usuario.papel !== 'ADMIN') return reply.redirect('/');
-    return reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-store').send(fn({ usuario: req.usuario, limites: LIMITES, id: req.params?.id ? Number(req.params.id) : undefined }));
+    return reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-store').send(fn({ usuario: req.usuario, limites: LIMITES, celularUrlPadrao: config.celularUrlPadrao, id: req.params?.id ? Number(req.params.id) : undefined }));
   };
   app.get('/login', async (req, reply) => (req.usuario ? reply.redirect('/') : reply.type('text/html; charset=utf-8').send(paginas.paginaLogin())));
   app.get('/', tela(paginas.visaoGeral));

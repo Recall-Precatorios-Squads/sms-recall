@@ -9,6 +9,8 @@ export const config = {
   appSecret: e.APP_SECRET ?? '',
   admin: { email: e.ADMIN_EMAIL ?? '', nome: e.ADMIN_NOME || 'Administrador', senha: e.ADMIN_SENHA ?? '' },
   fuso: e.TZ_TELA || 'America/Sao_Paulo',
+  // Endereço que já vem preenchido em "Adicionar celular" (o IP do celular na Wi-Fi da empresa).
+  celularUrlPadrao: e.CELULAR_URL_PADRAO ?? '',
   // SMSGATE_SIMULADO=1: nenhum SMS sai; os celulares são imitados (ensaio e testes).
   simulado: e.SMSGATE_SIMULADO === '1',
   sessaoHoras: Number(e.SESSAO_HORAS ?? 12),
