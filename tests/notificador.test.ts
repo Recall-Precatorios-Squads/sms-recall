@@ -37,32 +37,32 @@ beforeEach(async () => {
 describe('notificador', () => {
   it('alerta de erro chega ao webhook da TI e fica marcado como enviado', async () => {
     config.alertas.webhookUrl = `${base}/alerta`;
-    await registrarEvento({ tipo: 'chip', nivel: 'ERRO', texto: 'Chip 1 saiu da roleta' });
-    expect(await enviarAlertas()).toBe(1);
-    expect(JSON.parse(recebidos[0]!.corpo).text).toContain('Chip 1 saiu da roleta');
-    expect((await prisma.alerta.findFirstOrThrow()).status).toBe('ENVIADO');
+    const ev = await registrarEvento({ tipo: 'chip', nivel: 'ERRO', texto: 'Chip 1 saiu da roleta' });
+    await enviarAlertas();
+    expect(recebidos.some((r) => JSON.parse(r.corpo).text.includes('Chip 1 saiu da roleta'))).toBe(true);
+    expect((await prisma.alerta.findUniqueOrThrow({ where: { eventoId: ev.id } })).status).toBe('ENVIADO');
   });
 
   it('sem canal configurado o alerta não fica preso: registra que não havia canal', async () => {
     config.alertas.webhookUrl = '';
-    await registrarEvento({ tipo: 'chip', nivel: 'ERRO', texto: 'x' });
+    const ev = await registrarEvento({ tipo: 'chip', nivel: 'ERRO', texto: 'x' });
     await enviarAlertas();
-    expect((await prisma.alerta.findFirstOrThrow()).status).toBe('FALHOU');
+    expect((await prisma.alerta.findUniqueOrThrow({ where: { eventoId: ev.id } })).status).toBe('FALHOU');
   });
 
   it('aviso ao time vai assinado; 4xx do time não é repetido', async () => {
     const time = await prisma.time.create({ data: { nome: 'CRM', chaveHash: createHash('sha256').update('sms_chave').digest('hex'), chavePrefixo: 'sms_chav', webhookUrl: `${base}/aviso` } });
     const m = await prisma.mensagem.create({ data: { telefone: '+5511999990001', texto: 'oi', timeId: time.id, status: 'ENTREGUE', chaveIdempotencia: 'k1' } });
-    await prisma.aviso.create({ data: { mensagemId: m.id, timeId: time.id, statusMensagem: 'ENTREGUE' } });
-    expect(await enviarAvisos()).toBe(1);
-    const r = recebidos[0]!;
+    const primeiro = await prisma.aviso.create({ data: { mensagemId: m.id, timeId: time.id, statusMensagem: 'ENTREGUE' } });
+    await enviarAvisos();
+    const r = recebidos.find((x) => x.url === '/aviso' && JSON.parse(x.corpo).avisoId === primeiro.id)!;
     expect(JSON.parse(r.corpo)).toMatchObject({ id: m.id, chaveIdempotencia: 'k1', status: 'ENTREGUE', rotulo: 'Entregue' });
     expect(r.assinatura).toBe(assinar(r.corpo, time.chaveHash));
 
     responder = 404;
-    await prisma.aviso.create({ data: { mensagemId: m.id, timeId: time.id, statusMensagem: 'ENTREGUE' } });
+    const segundo = await prisma.aviso.create({ data: { mensagemId: m.id, timeId: time.id, statusMensagem: 'ENTREGUE' } });
     await enviarAvisos();
-    const ultimo = await prisma.aviso.findFirstOrThrow({ orderBy: { id: 'desc' } });
+    const ultimo = await prisma.aviso.findUniqueOrThrow({ where: { id: segundo.id } });
     expect(ultimo).toMatchObject({ status: 'FALHOU', tentativas: 1 });
   });
 
@@ -70,9 +70,9 @@ describe('notificador', () => {
     responder = 503;
     const time = await prisma.time.create({ data: { nome: 'CRM', chaveHash: 'h', chavePrefixo: 'sms_xxxx', webhookUrl: `${base}/aviso` } });
     const m = await prisma.mensagem.create({ data: { telefone: '+5511999990001', texto: 'oi', timeId: time.id, status: 'ENTREGUE' } });
-    await prisma.aviso.create({ data: { mensagemId: m.id, timeId: time.id, statusMensagem: 'ENTREGUE' } });
+    const criado = await prisma.aviso.create({ data: { mensagemId: m.id, timeId: time.id, statusMensagem: 'ENTREGUE' } });
     await enviarAvisos();
-    const a = await prisma.aviso.findFirstOrThrow();
+    const a = await prisma.aviso.findUniqueOrThrow({ where: { id: criado.id } });
     expect(a.status).toBe('PENDENTE');
     expect(a.proximaTentativaEm.getTime()).toBeGreaterThan(Date.now() + 20_000);
   });

@@ -42,9 +42,19 @@ function proximo(tentativas: number): Date {
   return new Date(Date.now() + (ESPERAS[Math.min(tentativas, ESPERAS.length - 1)] ?? 3_600_000));
 }
 
+/** Ids vencidos de uma outbox, pelo relógio do BANCO (o mesmo que preencheu proxima_tentativa_em). */
+async function vencidos(tabela: 'alertas' | 'avisos', limite: number): Promise<number[]> {
+  const linhas = tabela === 'alertas'
+    ? await prisma.$queryRaw<{ id: number }[]>`SELECT id FROM alertas WHERE status = 'PENDENTE' AND proxima_tentativa_em <= now() ORDER BY id LIMIT ${limite}`
+    : await prisma.$queryRaw<{ id: number }[]>`SELECT id FROM avisos WHERE status = 'PENDENTE' AND proxima_tentativa_em <= now() ORDER BY id LIMIT ${limite}`;
+  return linhas.map((l) => l.id);
+}
+
 /** Alertas pendentes → canal da TI. Sem canal configurado, o alerta fica registrado como não enviado (aparece nos logs). */
 export async function enviarAlertas(): Promise<number> {
-  const lista = await prisma.alerta.findMany({ where: { status: 'PENDENTE', proximaTentativaEm: { lte: new Date() } }, include: { evento: true }, orderBy: { id: 'asc' }, take: 20 });
+  const ids = await vencidos('alertas', 20);
+  if (!ids.length) return 0;
+  const lista = await prisma.alerta.findMany({ where: { id: { in: ids } }, include: { evento: true }, orderBy: { id: 'asc' } });
   if (!lista.length) return 0;
   if (!canaisDeAlerta().length) {
     await prisma.alerta.updateMany({ where: { id: { in: lista.map((a) => a.id) } }, data: { status: 'FALHOU', erro: 'nenhum canal de alerta configurado (TELEGRAM_* ou ALERTA_WEBHOOK_URL)' } });
@@ -77,11 +87,12 @@ export function assinar(corpo: string, chaveHashHex: string): string {
 
 /** Avisos pendentes → webhook de cada time. */
 export async function enviarAvisos(): Promise<number> {
+  const ids = await vencidos('avisos', 50);
+  if (!ids.length) return 0;
   const lista = await prisma.aviso.findMany({
-    where: { status: 'PENDENTE', proximaTentativaEm: { lte: new Date() } },
+    where: { id: { in: ids } },
     include: { time: { select: { webhookUrl: true, chaveHash: true, ativo: true } }, mensagem: { select: { id: true, chaveIdempotencia: true, disparoId: true, entregueEm: true, detalhe: true } } },
     orderBy: { id: 'asc' },
-    take: 50,
   });
   let enviados = 0;
   for (const a of lista) {
