@@ -1,4 +1,4 @@
-# Integração com o sms-recall (API /v1) — guia para o time e para o agente de código
+# Integração com o sms-recall (API /v1, uso interno) — guia para o time e para o agente de código
 
 > **Para o agente (Claude/Codex) que for implementar:** este arquivo é a fonte de verdade da integração.
 > O contrato abaixo foi tirado do código do `sms-recall` (`src/rotas/v1.ts`, `src/rotas/openapi.ts`,
@@ -8,7 +8,7 @@
 ## 1. O que é
 
 O `sms-recall` envia SMS pelos **chips da empresa** (celulares Android com o app sms-gate), a partir de um mini PC
-na rede interna. Outros sistemas (ex.: o CRM) pedem o envio por uma API HTTP.
+na rede interna. Sistemas e times **internos** pedem o envio por uma API HTTP (uso só na rede da empresa).
 
 - **Assíncrono:** o pedido entra numa fila e a API responde `202` na hora. O SMS sai quando houver um chip livre,
   dentro da janela de envio (08:00–20:00, horário de Brasília) e respeitando a cota diária de cada chip.
@@ -32,17 +32,14 @@ SMS_API_URL=http://RECALL-0169:3000
 SMS_API_KEY=sms_...            # cofre de segredos / .env
 ```
 
-## 3. ⚠️ Pré-requisitos de rede (bloqueiam a integração com o CRM na AWS)
+## 3. Rede: uso só interno
 
-O mini PC está **só na rede interna** e atrás do **proxy da empresa** (que bloqueia saída `https` sem autenticação).
+A API é **só para sistemas e pessoas na rede interna da empresa** (decisão de 11/11/2026: nenhum sistema externo, como o
+CRM na AWS, vai usar). Não há túnel nem exposição para a internet.
 
-| Fluxo | Situação hoje | O que precisa | Responsável |
-|---|---|---|---|
-| CRM (AWS) → API `/v1` do mini PC | **Não alcança** (rede interna) | Ligar o túnel: `TUNNEL_TOKEN` no `.env` do mini PC + `docker compose --profile tunel up -d`; no painel da Cloudflare, hostname público → `http://traefik:80` liberando **só `/v1/*`** (de preferência com Cloudflare Access/service token além da `X-Api-Key`) | Infra/TI + quem administra a Cloudflare |
-| Webhook mini PC → CRM (AWS) | **Bloqueado pelo proxy** (o worker não usa proxy) | Exceção no proxy para o mini PC `192.168.172.214` sair para o domínio do webhook do CRM | TI (Flávio) |
-| Sistemas na rede interna → API | Funciona | — | — |
-
-Enquanto o webhook não sair do mini PC, use **consulta (polling)** — seção 6.
+- Quem chama precisa estar na **rede da empresa** (cabo ou Wi-Fi interna). A Wi-Fi de **visitantes** não enxerga o mini PC.
+- O **webhook** só pode apontar para endereços da rede interna (o mini PC não sai para a internet: o proxy da empresa bloqueia).
+- Se um dia algum sistema externo precisar usar, é uma mudança de arquitetura (túnel + exceção de proxy) a decidir antes.
 
 ## 4. Endpoints
 
@@ -226,14 +223,14 @@ Teste local do webhook: `node scripts/receber-webhook.mjs` (no repositório do s
       (para retomar após queda) e o `id` devolvido depois.
 - [ ] **Webhook** (`8.2`): rota com assinatura conferida no corpo cru, `avisoId` deduplicado, resposta 2xx rápida.
 - [ ] **Rede de segurança:** job que consulta `GET /v1/mensagens/{id}` (ou a lista por status) para envios não finais há
-      mais de 10 min — cobre webhook perdido ou bloqueado pelo proxy.
+      mais de 10 min — cobre webhook perdido (ex.: o sistema cliente estava fora do ar).
 - [ ] **Tratamento de status** conforme a seção 5 (sem reenvio automático de `INCERTA`; `FALHOU` só com nova chave
       e decisão de negócio).
 - [ ] **Erros 4xx** mostrados ao usuário com a `mensagem` da API; `429` sinaliza cota do time.
 - [ ] **Logs:** `X-Request-Id`, `sms_id`, status; sem chave, sem texto, telefone mascarado.
 - [ ] **Testes:** cliente contra um servidor falso (`202`, `200` idempotente, `422`, `429`, `5xx` com repetição e
       mesma chave); webhook com assinatura válida, inválida (`401`) e `avisoId` repetido; job de consulta.
-- [ ] **Pré-requisitos de rede** da seção 3 confirmados com a infra antes de ligar em produção.
+- [ ] **Rede:** o sistema cliente roda na rede interna (seção 3); a URL do webhook é interna.
 
 ## 10. Critérios de aceite
 
@@ -242,7 +239,7 @@ Teste local do webhook: `node scripts/receber-webhook.mjs` (no repositório do s
 2. Dada uma mensagem entregue, quando o webhook chega, então o registro fica `ENTREGUE` com `entregueEm`; um segundo
    aviso igual não muda nada.
 3. Dado um webhook com assinatura errada, então a rota responde `401` e nada é alterado.
-4. Dado o webhook bloqueado, quando passam 10 min, então o job de consulta atualiza o status pela API.
+4. Dado um webhook perdido (sistema cliente fora do ar), quando passam 10 min, então o job de consulta atualiza o status pela API.
 5. Dada uma mensagem `INCERTA`, então nada é reenviado automaticamente e o caso fica visível para o time.
 
 ## 11. Contato e operação

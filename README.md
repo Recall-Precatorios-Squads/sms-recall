@@ -10,7 +10,7 @@ TypeScript (strict) · Fastify 5 · Zod · Prisma 6 · PostgreSQL 16 · Traefik 
 - **A TI** cadastra celulares e chips, acompanha a revisão, os bloqueios e os logs, e recebe **alertas**.
 
 > **Mini PC (produção): como atualizar e operar → [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md).**
-> **Vai integrar outro sistema (ex.: o CRM)? → [docs/INTEGRACAO-API.md](docs/INTEGRACAO-API.md)** (guia para o time e para o agente de código).
+> **Vai integrar um sistema interno? → [docs/INTEGRACAO-API.md](docs/INTEGRACAO-API.md)** (guia para o time e para o agente de código). A API é **só para uso interno**.
 
 ## Arquitetura
 
