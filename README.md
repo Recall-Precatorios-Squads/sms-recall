@@ -9,6 +9,8 @@ TypeScript (strict) · Fastify 5 · Zod · Prisma 6 · PostgreSQL 16 · Traefik 
 - **Outros sistemas e times** (ex.: o CRM) enviam pela **API `/v1`**, com chave própria, cota e prioridade.
 - **A TI** cadastra celulares e chips, acompanha a revisão, os bloqueios e os logs, e recebe **alertas**.
 
+> **Mini PC (produção): como atualizar e operar → [docs/ATUALIZACAO.md](docs/ATUALIZACAO.md).**
+
 ## Arquitetura
 
 ```
