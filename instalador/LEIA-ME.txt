@@ -1,0 +1,15 @@
+sms-recall - instalacao no mini PC (sem internet: Docker, imagens e codigo estao nesta pasta)
+
+1. Copie esta pasta inteira para  C:\sms-recall-instalador  no mini PC.
+
+2. PowerShell COMO ADMINISTRADOR:
+     powershell -ExecutionPolicy Bypass -File C:\sms-recall-instalador\windows.ps1
+     wsl --shutdown
+
+3. Abra o "Ubuntu" no menu Iniciar e rode:
+     bash /mnt/c/sms-recall-instalador/instalar.sh
+   (se ele pedir para rodar  wsl --shutdown  e repetir, faca isso uma vez)
+
+4. De outro computador da rede, abra o endereco que o instalador mostrar (http://<ip>:3000).
+
+Atualizar para uma versao nova: copie a pasta nova por cima e rode de novo o passo 3 (.env e dados sao mantidos).
