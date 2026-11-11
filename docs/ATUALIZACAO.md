@@ -58,6 +58,23 @@ curl --noproxy '*' http://localhost:3000/health; echo
 Esperado: `traefik`, `postgres` e os dois `app` **healthy**, `worker` e `backup` **Up**, e `{"ok":true,"worker":{"vivo":true,...}}`.
 Depois abra `http://RECALL-0169:3000` de outro computador.
 
+## O mini PC não pode dormir (obrigatório)
+
+O padrão de energia do Windows suspende a máquina quando ninguém mexe: aí a rede, o Ubuntu, o Docker e o envio param
+(no navegador aparece "demorou muito para responder" ou `DNS_PROBE_FINISHED_NXDOMAIN`). No PowerShell **como administrador**:
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+powercfg /hibernate off
+powercfg /change monitor-timeout-ac 10
+Get-NetAdapter -Physical | ForEach-Object { Disable-NetAdapterPowerManagement -Name $_.Name -NoRestart -ErrorAction SilentlyContinue }
+```
+
+Pedidos à TI: **reserva de IP fixo** para o mini PC (`192.168.172.214`) e, se a política de energia da empresa (GPO)
+reativar a suspensão, uma **exceção** para esta máquina. Prefira o endereço por IP (`http://192.168.172.214:3000`):
+ele não depende do DNS.
+
 ## Depois de reiniciar o mini PC ou rodar `wsl --shutdown`
 
 A tarefa agendada **"sms-recall (WSL)"** liga o Ubuntu **quando o usuário entra no Windows** (a política da empresa
@@ -81,7 +98,7 @@ Para voltar sozinho até depois de queda de energia, sem ninguém entrar: a TI l
 | `curl: (22) ... error: 407` no Ubuntu | Proxy da empresa pedindo login | Não baixe da internet: use o pacote (este guia). Para a rede interna use sempre `--noproxy '*'` |
 | `curl localhost:3000` não responde no Ubuntu | O `curl` mandou o `localhost` para o proxy | `curl --noproxy '*' http://localhost:3000/health` |
 | `404 page not found` | O Traefik subiu, mas o app ainda não está saudável | Espere 30 s; confira `docker compose ps` |
-| Navegador de outro PC: "demorou muito para responder" | Ubuntu desligado no mini PC | Seção acima (`Start-ScheduledTask`) |
+| Navegador de outro PC: "demorou muito para responder" ou `DNS_PROBE_FINISHED_NXDOMAIN` | Mini PC suspenso (dormindo) ou Ubuntu desligado | Acorde o mini PC, aplique "O mini PC não pode dormir" e rode `Start-ScheduledTask` |
 | Abre no mini PC por `localhost` mas não pelo nome no próprio mini PC | Rede espelhada do WSL | Use `http://localhost:3000` no mini PC |
 | Outro PC com proxy não abre | O navegador manda o endereço interno para o proxy | Exceção no proxy: `recall-0169;192.168.*` (melhor: a TI coloca para todos) |
 | `Permission denied` ao baixar em `/mnt/c/...` | Pasta do Windows sem permissão de escrita | Baixe em `~` (pasta do Ubuntu), como neste guia |
