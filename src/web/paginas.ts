@@ -544,7 +544,7 @@ export function novoDisparo(ctx: Ctx): string {
   <div class="passos">
     <section class="card">
       <div class="passo-cab"><span class="passo-n" id="n1">1</span><h2>Planilha de contatos</h2></div>
-      <p class="apoio">Envie um arquivo <b>.xlsx</b> ou <b>.csv</b> com uma coluna <b>telefone</b>. As colunas <b>nome</b> e <b>mensagem</b> são opcionais. Até ${L.contatos} contatos por disparo. O arquivo é lido aqui no navegador.</p>
+      <p class="apoio">Envie um arquivo <b>.xlsx</b> ou <b>.csv</b> com uma coluna <b>telefone</b>. As colunas <b>nome</b> e <b>mensagem</b> são opcionais. Depois de carregar, você confere e escolhe qual coluna é qual. Até ${L.contatos} contatos por disparo. O arquivo é lido aqui no navegador.</p>
       <label class="soltar" id="soltar" for="arquivo">
         ${icone('upload', 24)}
         <span><b>Arraste a planilha aqui</b> ou clique para escolher</span>
@@ -553,6 +553,15 @@ export function novoDisparo(ctx: Ctx): string {
       </label>
       <div class="acoes"><button class="botao secundario pequeno" type="button" id="btnModelo">${icone('baixar', 16)}Baixar planilha modelo</button><span class="dica" id="nomeArquivo"></span></div>
       <div id="pErro" hidden></div>
+      <div id="pColunas" hidden style="display:grid;gap:var(--space-3)">
+        <div><b>Qual coluna é qual?</b> <span class="dica">O sistema adivinhou pelo cabeçalho. Se estiver errado, troque aqui.</span></div>
+        <div class="grade g3">
+          <div class="campo"><label for="colTel">Telefone</label><select id="colTel"></select></div>
+          <div class="campo"><label for="colNome">Nome</label><select id="colNome"></select></div>
+          <div class="campo"><label for="colMsg">Mensagem própria da linha</label><select id="colMsg"></select></div>
+        </div>
+        <label class="check"><input type="checkbox" id="colCab"> A primeira linha é o cabeçalho (nomes das colunas), não um contato</label>
+      </div>
       <div id="pResumo" hidden style="display:grid;gap:var(--space-4)">
         <div class="seg" id="pNumeros"></div>
         <div class="tabela"><table id="pTabela"><thead><tr><th>Linha</th><th>Nome</th><th>Telefone</th><th>Mensagem própria</th></tr></thead><tbody></tbody></table></div>
@@ -592,7 +601,7 @@ export function novoDisparo(ctx: Ctx): string {
     </section>
   </div>`;
   const script = `
-let planilha = null; let chips = [];
+let planilha = null; let chips = []; let linhasAtuais = null;
 const MAX_MSGS = ${L.modelos};
 // Sem acento de propósito: acento troca a codificação (GSM-7 → UCS-2) e o SMS passa a ser cobrado como 2.
 let textos = ['Ola {nome}, aqui e da Recall. Este e um teste do nosso servico de SMS.'];
@@ -628,24 +637,44 @@ $('arqAbordagens').addEventListener('change', async e => {
 });
 function aplicar(m, nome){ return m.replace(/\\{\\s*nome\\s*\\}/gi, (nome||'').trim()).replace(/[ \\t]{2,}/g,' ').replace(/\\s+([,.!?;:])/g,'$1').trim(); }
 
+function opcoesSelect(sel, opcoes, valor, permiteNenhuma){
+  sel.innerHTML = (permiteNenhuma ? '<option value="-1">Não usar</option>' : '') + opcoes.map(o => '<option value="'+o.indice+'">'+esc(o.rotulo)+'</option>').join('');
+  sel.value = String(valor);
+}
+function mostrarPlanilha(r){
+  $('pColunas').hidden = false;
+  opcoesSelect($('colTel'), r.opcoes, r.mapa.telefone, false);
+  opcoesSelect($('colNome'), r.opcoes, r.mapa.nome, true);
+  opcoesSelect($('colMsg'), r.opcoes, r.mapa.mensagem, true);
+  $('colCab').checked = r.mapa.cabecalho;
+  if (!r.contatos.length) { planilha = null; $('pResumo').hidden = true; caixa('pErro','erro','Nenhum telefone válido na coluna escolhida. Confira em <b>Qual coluna é qual?</b> qual coluna tem o telefone com DDD.'); return; }
+  if (r.contatos.length > ${L.contatos}) { planilha = null; $('pResumo').hidden = true; caixa('pErro','erro','A planilha tem '+r.contatos.length+' contatos válidos. Cada disparo vai até ${L.contatos}.'); return; }
+  $('pErro').hidden = true;
+  planilha = r;
+  $('pResumo').hidden = false;
+  $('pNumeros').innerHTML = '<span>Linhas <b>'+r.total+'</b></span><span>Contatos válidos <b>'+r.contatos.length+'</b></span><span>Telefone inválido <b>'+r.invalidos.length+'</b></span><span>Repetidos (entram uma vez) <b>'+r.duplicados+'</b></span>';
+  $('pTabela').querySelector('tbody').innerHTML = r.contatos.slice(0,8).map(c => '<tr><td>'+c.linha+'</td><td>'+esc(c.nome||'—')+'</td><td>'+esc(c.mascarado)+'</td><td>'+(c.mensagem?'sim':'—')+'</td></tr>').join('')
+    + (r.contatos.length > 8 ? '<tr><td colspan="4" class="dica">e mais '+(r.contatos.length-8)+' contato(s)</td></tr>' : '');
+  $('pInvalidosBox').hidden = !r.invalidos.length;
+  $('pInvalidosTit').textContent = r.invalidos.length+' linha(s) com telefone inválido ficam de fora (ver)';
+  $('pInvalidos').innerHTML = r.invalidos.slice(0,50).map(x => '<tr><td>'+x.linha+'</td><td>'+esc(x.valor||'(vazio)')+'</td></tr>').join('');
+}
+function remapear(){
+  if (!linhasAtuais) return;
+  const mapa = { telefone: Number($('colTel').value), nome: Number($('colNome').value), mensagem: Number($('colMsg').value), cabecalho: $('colCab').checked };
+  mostrarPlanilha(Planilha.montarContatos(linhasAtuais, mapa));
+  atualizar();
+}
+['colTel','colNome','colMsg','colCab'].forEach(id => $(id).addEventListener('change', remapear));
+
 async function abrir(arquivo){
-  $('pErro').hidden = true; $('pResumo').hidden = true; planilha = null; atualizar();
+  $('pErro').hidden = true; $('pResumo').hidden = true; $('pColunas').hidden = true; planilha = null; linhasAtuais = null; atualizar();
   $('nomeArquivo').textContent = arquivo.name;
   try {
-    const linhas = await Planilha.ler(arquivo);
-    const r = Planilha.montarContatos(linhas);
-    if (!r.contatos.length) { caixa('pErro','erro','Não encontrei nenhum telefone válido. Confira se existe uma coluna "telefone" com DDD e número.'); return; }
-    if (r.contatos.length > ${L.contatos}) { caixa('pErro','erro','A planilha tem '+r.contatos.length+' contatos válidos. Cada disparo vai até ${L.contatos}.'); return; }
-    planilha = r;
+    linhasAtuais = await Planilha.ler(arquivo);
+    if (!linhasAtuais.length) { caixa('pErro','erro','A planilha está vazia.'); return; }
     if (!$('nomeDisparo').value) $('nomeDisparo').value = arquivo.name.replace(/\\.[^.]+$/, '');
-    $('pResumo').hidden = false;
-    $('pNumeros').innerHTML = '<span>Linhas <b>'+r.total+'</b></span><span>Contatos válidos <b>'+r.contatos.length+'</b></span><span>Telefone inválido <b>'+r.invalidos.length+'</b></span><span>Repetidos (entram uma vez) <b>'+r.duplicados+'</b></span>'
-      + '<span>Colunas: telefone = <b>'+esc(r.colunas.telefone)+'</b>'+(r.colunas.nome?' · nome = <b>'+esc(r.colunas.nome)+'</b>':'')+(r.colunas.mensagem?' · mensagem = <b>'+esc(r.colunas.mensagem)+'</b>':'')+'</span>';
-    $('pTabela').querySelector('tbody').innerHTML = r.contatos.slice(0,8).map(c => '<tr><td>'+c.linha+'</td><td>'+esc(c.nome||'—')+'</td><td>'+esc(c.mascarado)+'</td><td>'+(c.mensagem?'sim':'—')+'</td></tr>').join('')
-      + (r.contatos.length > 8 ? '<tr><td colspan="4" class="dica">e mais '+(r.contatos.length-8)+' contato(s)</td></tr>' : '');
-    $('pInvalidosBox').hidden = !r.invalidos.length;
-    $('pInvalidosTit').textContent = r.invalidos.length+' linha(s) com telefone inválido ficam de fora (ver)';
-    $('pInvalidos').innerHTML = r.invalidos.slice(0,50).map(x => '<tr><td>'+x.linha+'</td><td>'+esc(x.valor||'(vazio)')+'</td></tr>').join('');
+    mostrarPlanilha(Planilha.montarContatos(linhasAtuais));
   } catch (e) { caixa('pErro','erro', esc(e.message || 'Não consegui ler a planilha.')); }
   atualizar();
 }
@@ -788,7 +817,7 @@ $('btnCancelar').addEventListener('click', async () => {
 });
 $('btnExportar').addEventListener('click', () => {
   if (!ultimo) return;
-  Planilha.baixarCsv('resultado-'+ultimo.nome.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.csv',
+  Planilha.baixarXlsx('resultado-'+ultimo.nome.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.xlsx',
     [['linha','nome','telefone','texto','chip','status','detalhe','atualizado']].concat(ultimo.mensagens.map(m => [m.linha??'', m.nome||'', m.telefone, m.texto||'', m.chip||'', m.rotulo, m.detalhe||'', m.atualizadoEm||''])));
 });
 carregar().catch(() => {});
@@ -937,7 +966,7 @@ async function carregar(){
   pintarPager(r.page, r.size, r.total, (p) => { pagina = p; carregar().catch(() => {}); });
 }
 $('fNivel').addEventListener('change', () => { pagina = 1; carregar().catch(() => {}); });
-$('btnExportar').addEventListener('click', () => Planilha.baixarCsv('logs-servico-sms.csv', [['hora','nivel','tipo','texto','chip','disparo','usuario']].concat(atuais.map(e => [e.criadoEm, e.nivel, e.tipo, e.texto, e.chip||'', e.disparoId||'', e.usuario||'']))));
+$('btnExportar').addEventListener('click', () => Planilha.baixarXlsx('logs-servico-sms.xlsx', [['hora','nivel','tipo','texto','chip','disparo','usuario']].concat(atuais.map(e => [e.criadoEm, e.nivel, e.tipo, e.texto, e.chip||'', e.disparoId||'', e.usuario||'']))));
 setInterval(() => { if ($('fAuto').checked) carregar().catch(() => {}); }, 5000);
 carregar().catch(() => {});
 `;

@@ -7,7 +7,8 @@
   function lerCsv(texto) {
     const t = texto.replace(/^﻿/, '');
     const primeira = t.split(/\r?\n/)[0] || '';
-    const sep = (primeira.match(/;/g) || []).length >= (primeira.match(/,/g) || []).length ? ';' : ',';
+    const conta = (c) => primeira.split(c).length - 1;
+    const sep = [';', ',', '\t'].reduce((m, c) => (conta(c) > conta(m) ? c : m), ';');
     const linhas = [];
     let campo = '';
     let linha = [];
@@ -145,8 +146,21 @@
   };
   function semAcento(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
 
-  function montarContatos(linhas) {
-    if (!linhas.length) return { colunas: null, contatos: [], invalidos: [], duplicados: 0, total: 0 };
+  const letra = (i) => (i >= 26 ? String.fromCharCode(64 + Math.floor(i / 26)) : '') + String.fromCharCode(65 + (i % 26));
+
+  /** Colunas para o operador escolher: letra + cabeçalho (ou um exemplo do valor). */
+  function opcoesDeColunas(linhas, cabecalho) {
+    const n = Math.max(0, ...linhas.slice(0, 20).map((l) => l.length));
+    const exemplo = (i) => String((linhas[cabecalho ? 1 : 0] || [])[i] ?? '').trim().slice(0, 24);
+    return Array.from({ length: n }, (_, i) => ({ indice: i, rotulo: letra(i) + ' — ' + (cabecalho && String(linhas[0][i] ?? '').trim() ? String(linhas[0][i]).trim().slice(0, 30) : exemplo(i) || '(vazia)') }));
+  }
+
+  /**
+   * mapa (opcional) = { telefone, nome, mensagem, cabecalho }: índices escolhidos na tela (-1 = não usar).
+   * Sem mapa, detecta pelo cabeçalho; sem cabeçalho reconhecido, A = telefone, B = nome, C = mensagem.
+   */
+  function montarContatos(linhas, mapa) {
+    if (!linhas.length) return { colunas: null, contatos: [], invalidos: [], duplicados: 0, total: 0, mapa: null, opcoes: [] };
     const cab = linhas[0].map(semAcento);
     const usadas = new Set();
     // Primeiro o nome exato ("nome"); depois o que contém a palavra ("Nome do cliente", "Telefone celular").
@@ -162,7 +176,10 @@
     const nome = achar(SINONIMOS.nome);
     let col = { telefone, nome, mensagem };
     let inicio = 1;
-    if (col.telefone < 0) {
+    if (mapa) {
+      col = { telefone: mapa.telefone, nome: mapa.nome, mensagem: mapa.mensagem };
+      inicio = mapa.cabecalho ? 1 : 0;
+    } else if (col.telefone < 0) {
       // Sem cabeçalho reconhecido: coluna A = telefone, B = nome, C = mensagem.
       col = { telefone: 0, nome: linhas[0].length > 1 ? 1 : -1, mensagem: linhas[0].length > 2 ? 2 : -1 };
       inicio = normalizarTelefone(linhas[0][0]) ? 0 : 1;
@@ -187,8 +204,13 @@
         mensagem: col.mensagem >= 0 ? String(l[col.mensagem] ?? '').trim() : '',
       });
     }
-    const nomeCol = (i) => (i >= 0 ? (linhas[0][i] && inicio === 1 ? String(linhas[0][i]) : 'coluna ' + String.fromCharCode(65 + i)) : null);
-    return { colunas: { telefone: nomeCol(col.telefone), nome: nomeCol(col.nome), mensagem: nomeCol(col.mensagem) }, contatos, invalidos, duplicados, total: linhas.length - inicio };
+    const nomeCol = (i) => (i >= 0 ? (linhas[0][i] && inicio === 1 ? String(linhas[0][i]) : 'coluna ' + letra(i)) : null);
+    return {
+      colunas: { telefone: nomeCol(col.telefone), nome: nomeCol(col.nome), mensagem: nomeCol(col.mensagem) },
+      contatos, invalidos, duplicados, total: linhas.length - inicio,
+      mapa: { telefone: col.telefone, nome: col.nome, mensagem: col.mensagem, cabecalho: inicio === 1 },
+      opcoes: opcoesDeColunas(linhas, inicio === 1),
+    };
   }
 
   // ── Linhas → abordagens (textos da roleta) ──
@@ -235,8 +257,74 @@
     a.href = url; a.download = nomeArquivo; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  // ── Gerar .xlsx de verdade (zip sem compressão): abre igual em qualquer Excel, sem depender de separador ──
+  const TABELA_CRC = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) c = TABELA_CRC[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function zipSemCompressao(arquivos) {
+    const enc = new TextEncoder();
+    const partes = [];
+    const central = [];
+    let pos = 0;
+    for (const [nome, conteudo] of arquivos) {
+      const n = enc.encode(nome);
+      const d = enc.encode(conteudo);
+      const crc = crc32(d);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, d.length, true); lh.setUint32(22, d.length, true); lh.setUint16(26, n.length, true);
+      partes.push(new Uint8Array(lh.buffer), n, d);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, d.length, true); ch.setUint32(24, d.length, true); ch.setUint16(28, n.length, true);
+      ch.setUint32(42, pos, true);
+      central.push(new Uint8Array(ch.buffer), n);
+      pos += 30 + n.length + d.length;
+    }
+    const tamCentral = central.reduce((t, p) => t + p.length, 0);
+    const fim = new DataView(new ArrayBuffer(22));
+    fim.setUint32(0, 0x06054b50, true); fim.setUint16(8, arquivos.length, true); fim.setUint16(10, arquivos.length, true);
+    fim.setUint32(12, tamCentral, true); fim.setUint32(16, pos, true);
+    return new Blob([...partes, ...central, new Uint8Array(fim.buffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  /** Planilha .xlsx de uma aba: texto puro em cada célula, 1ª linha em negrito, largura das colunas ajustada. */
+  function gerarXlsx(linhas) {
+    const xml = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const ncol = Math.max(1, ...linhas.map((l) => l.length));
+    const larg = Array.from({ length: ncol }, (_, i) => Math.min(80, Math.max(12, ...linhas.map((l) => String(l[i] ?? '').length + 2))));
+    const celula = (v, c, r) => (v === '' || v == null ? '' : '<c r="' + letra(c) + (r + 1) + '" t="inlineStr"' + (r === 0 ? ' s="1"' : '') + '><is><t xml:space="preserve">' + xml(v) + '</t></is></c>');
+    const linhasXml = linhas.map((l, r) => '<row r="' + (r + 1) + '">' + l.map((v, c) => celula(v, c, r)).join('') + '</row>').join('');
+    const colsXml = larg.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('');
+    const NS = 'http://schemas.openxmlformats.org';
+    return zipSemCompressao([
+      ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="' + NS + '/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+      ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="' + NS + '/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + '/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+      ['xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="' + NS + '/spreadsheetml/2006/main" xmlns:r="' + NS + '/officeDocument/2006/relationships"><sheets><sheet name="Planilha1" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+      ['xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="' + NS + '/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + '/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="' + NS + '/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+      ['xl/styles.xml', '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="' + NS + '/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf fontId="0"/><xf fontId="1" applyFont="1"/></cellXfs></styleSheet>'],
+      ['xl/worksheets/sheet1.xml', '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="' + NS + '/spreadsheetml/2006/main"><cols>' + colsXml + '</cols><sheetData>' + linhasXml + '</sheetData></worksheet>'],
+    ]);
+  }
+  function baixarXlsx(nomeArquivo, linhas) {
+    const url = URL.createObjectURL(gerarXlsx(linhas));
+    const a = document.createElement('a');
+    a.href = url; a.download = nomeArquivo; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   function modeloCsv() {
-    baixarCsv('modelo-disparo-sms.csv', [
+    baixarXlsx('modelo-disparo-sms.xlsx', [
       ['telefone', 'nome', 'mensagem'],
       ['(15) 99999-0001', 'Maria', ''],
       ['(41) 99999-0002', 'João', 'Olá João, esta linha tem a própria mensagem.'],
@@ -244,7 +332,7 @@
   }
 
   function modeloAbordagensCsv() {
-    baixarCsv('modelo-abordagens-sms.csv', [
+    baixarXlsx('modelo-abordagens-sms.xlsx', [
       ['abordagem'],
       ['Olá {nome}, aqui é da Recall. Podemos conversar sobre o seu processo?'],
       ['{nome}, tudo bem? Temos uma novidade sobre o seu precatório. Pode falar hoje?'],
@@ -252,5 +340,5 @@
     ]);
   }
 
-  window.Planilha = { ler, lerCsv, montarContatos, montarAbordagens, normalizarTelefone, mascarar, baixarCsv, modeloCsv, modeloAbordagensCsv };
+  window.Planilha = { ler, lerCsv, montarContatos, montarAbordagens, normalizarTelefone, mascarar, baixarCsv, baixarXlsx, gerarXlsx, modeloCsv, modeloAbordagensCsv };
 })();
