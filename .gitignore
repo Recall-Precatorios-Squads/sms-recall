@@ -1,0 +1,6 @@
+.env
+node_modules/
+# estado gravado (disparos, mensagens, logs) e log do supervisor
+data/
+# ADB do Google, baixado à parte
+ferramentas/
