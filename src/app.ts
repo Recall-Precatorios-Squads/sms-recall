@@ -11,7 +11,7 @@ import { conferir, gerarHash } from './auth/senha.js';
 import { COOKIE, criarSessao, encerrarSessao, encerrarSessoesDoUsuario, usuarioDaSessao } from './auth/sessao.js';
 import { inicioDeHoje } from './lib/tempo.js';
 import { rotasV1 } from './rotas/v1.js';
-import { chipsDisponiveis, cotaEfetiva, criarAparelho, editarAparelho, editarChip, enviadosHojePorChip, listarAparelhos, testarAparelho } from './servicos/aparelhos.js';
+import { chipsDisponiveis, cotaEfetiva, sinalDoChip, criarAparelho, editarAparelho, editarChip, enviadosHojePorChip, listarAparelhos, testarAparelho } from './servicos/aparelhos.js';
 import { bloquear, criarTime, desbloquear, editarTime, listarBloqueios, listarTimes, trocarChave } from './servicos/cadastros.js';
 import { LIMITES, cancelarDisparo, criarDisparo, detalheDisparo, listarDisparos } from './servicos/disparos.js';
 import { registrarEvento, rotuloChip } from './servicos/eventos.js';
@@ -233,6 +233,7 @@ export async function criarApp({ logger = false }: { logger?: boolean } = {}) {
           bateria: c.aparelho.bateria,
           cota,
           cotaAtingida: total >= cota,
+          sinal: sinalDoChip(c, c.aparelho),
           hoje: { total, entregues: n(meus, (g) => g.status === 'ENTREGUE' || g.status === 'SEM_CONFIRMACAO'), falhas: n(meus, (g) => g.status === 'FALHOU') },
         };
       }),

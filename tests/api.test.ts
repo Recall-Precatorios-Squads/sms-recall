@@ -76,7 +76,7 @@ describe('telas e /api', () => {
     expect(p.janela).toMatchObject({ inicio: '08:00', fim: '20:00' });
     expect(p.worker).toMatchObject({ vivo: false });
     expect(p.revisao).toEqual({ falhas: 0, incertas: 0 });
-    expect(p.chips[0]).toMatchObject({ cota: 167, cotaAtingida: false });
+    expect(p.chips[0]).toMatchObject({ cota: 167, cotaAtingida: false, sinal: { nivel: 'ONLINE', barras: 3 } });
   });
 
   it('revisão: reenviar uma incerta volta para a fila; confirmar que saiu fecha', async () => {

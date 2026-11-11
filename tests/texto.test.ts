@@ -27,3 +27,16 @@ describe('texto e telefone', () => {
     }
   });
 });
+
+describe('sinal do chip', async () => {
+  const { sinalDoChip } = await import('../src/servicos/aparelhos.js');
+  const ap = { ativo: true, online: true };
+  it('online, instável, bloqueado, desativado e sem conexão', () => {
+    expect(sinalDoChip({ ativo: true, presente: true, falhasSeguidas: 0 }, ap)).toMatchObject({ nivel: 'ONLINE', barras: 3 });
+    expect(sinalDoChip({ ativo: true, presente: true, falhasSeguidas: 2 }, ap)).toMatchObject({ nivel: 'INSTAVEL', barras: 2 });
+    expect(sinalDoChip({ ativo: false, presente: true, falhasSeguidas: 5 }, ap)).toMatchObject({ nivel: 'BLOQUEADO', barras: 0 });
+    expect(sinalDoChip({ ativo: false, presente: true, falhasSeguidas: 0 }, ap)).toMatchObject({ nivel: 'DESATIVADO' });
+    expect(sinalDoChip({ ativo: true, presente: false, falhasSeguidas: 0 }, ap)).toMatchObject({ nivel: 'SEM_CONEXAO', rotulo: 'Chip não detectado' });
+    expect(sinalDoChip({ ativo: true, presente: true, falhasSeguidas: 0 }, { ativo: true, online: false })).toMatchObject({ nivel: 'SEM_CONEXAO', rotulo: 'Sem conexão' });
+  });
+});

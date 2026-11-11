@@ -9,12 +9,12 @@ import { log } from '../lib/log.js';
 import { inicioDeHoje } from '../lib/tempo.js';
 import { mascarar, sortearEspera } from '../lib/texto.js';
 import * as gate from '../smsgate/adaptador.js';
-import { credenciais } from '../servicos/aparelhos.js';
+import { FALHAS_PARA_PAUSAR_CHIP, credenciais } from '../servicos/aparelhos.js';
+export { FALHAS_PARA_PAUSAR_CHIP };
 import { registrarEvento, rotuloChip } from '../servicos/eventos.js';
 import { atualizarMensagem } from '../servicos/mensagens.js';
 
 export const MAX_TENTATIVAS = 3;
-export const FALHAS_PARA_PAUSAR_CHIP = 5;
 const ESPERA_RETRY_MS = [30_000, 120_000, 480_000];
 
 type ChipComAparelho = Chip & { aparelho: Aparelho };

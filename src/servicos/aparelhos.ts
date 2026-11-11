@@ -29,11 +29,39 @@ export async function enviadosHojePorChip(): Promise<Map<number, number>> {
   return new Map(grupos.map((g) => [g.chipId as number, g._count._all]));
 }
 
+/** Falhas seguidas que tiram o chip da roleta (o worker pausa o chip ao chegar nesse número). */
+export const FALHAS_PARA_PAUSAR_CHIP = 5;
+
+export type NivelSinal = 'ONLINE' | 'INSTAVEL' | 'BLOQUEADO' | 'DESATIVADO' | 'SEM_CONEXAO';
+export interface Sinal {
+  nivel: NivelSinal;
+  barras: 0 | 1 | 2 | 3;
+  rotulo: string;
+  explicacao: string;
+}
+
+/**
+ * Estado do chip para a tela (o app sms-gate NÃO informa a intensidade do sinal da operadora):
+ * vem de o celular responder, o chip ser detectado e do resultado dos últimos envios.
+ * Bloqueio pela operadora aparece como falhas seguidas até o worker pausar o chip.
+ */
+export function sinalDoChip(c: { ativo: boolean; presente: boolean; falhasSeguidas: number }, ap: { ativo: boolean; online: boolean }): Sinal {
+  if (!ap.ativo) return { nivel: 'DESATIVADO', barras: 0, rotulo: 'Desativado', explicacao: 'O celular está desativado no sistema.' };
+  if (!ap.online) return { nivel: 'SEM_CONEXAO', barras: 0, rotulo: 'Sem conexão', explicacao: 'O celular não respondeu: confira a Wi-Fi, a bateria e se o app está aberto.' };
+  if (!c.presente) return { nivel: 'SEM_CONEXAO', barras: 0, rotulo: 'Chip não detectado', explicacao: 'O celular não informou este chip: confira se ele está encaixado.' };
+  if (!c.ativo && c.falhasSeguidas >= FALHAS_PARA_PAUSAR_CHIP)
+    return { nivel: 'BLOQUEADO', barras: 0, rotulo: 'Bloqueado?', explicacao: `Pausado depois de ${c.falhasSeguidas} falhas seguidas: a operadora pode ter bloqueado o chip, ou ele está sem crédito. Teste num celular e reative.` };
+  if (!c.ativo) return { nivel: 'DESATIVADO', barras: 0, rotulo: 'Desativado', explicacao: 'Desativado manualmente: não entra na roleta.' };
+  if (c.falhasSeguidas > 0)
+    return { nivel: 'INSTAVEL', barras: 2, rotulo: 'Instável', explicacao: `${c.falhasSeguidas} falha(s) seguida(s) nos últimos envios. Com ${FALHAS_PARA_PAUSAR_CHIP}, o chip sai da roleta.` };
+  return { nivel: 'ONLINE', barras: 3, rotulo: 'Online', explicacao: 'Celular respondendo e últimos envios sem falha.' };
+}
+
 export const cotaEfetiva = (chip: { cotaDiaria: number | null }): number => chip.cotaDiaria ?? config.cotaDiariaChip;
 
 export async function listarAparelhos() {
   const [lista, hoje] = await Promise.all([prisma.aparelho.findMany({ select: SELECT_APARELHO, orderBy: { nome: 'asc' } }), enviadosHojePorChip()]);
-  return lista.map((a) => ({ ...a, chips: a.chips.map((c) => ({ ...c, cotaEfetiva: cotaEfetiva(c), enviadosHoje: hoje.get(c.id) ?? 0 })) }));
+  return lista.map((a) => ({ ...a, chips: a.chips.map((c) => ({ ...c, cotaEfetiva: cotaEfetiva(c), enviadosHoje: hoje.get(c.id) ?? 0, sinal: sinalDoChip(c, a) })) }));
 }
 
 /** Credenciais para o adaptador (senha decifrada só em memória, na hora de usar). */

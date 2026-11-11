@@ -181,6 +181,9 @@ const CSS_EXTRA = `
 .chip-linha:first-child{border-top:0}
 .check{display:inline-flex;gap:var(--space-2);align-items:center;font-weight:400}
 .check input{width:auto;height:auto}
+.sinal{display:inline-flex;align-items:center;gap:var(--space-1);font-size:12px;font-weight:600;white-space:nowrap}
+.sinal svg{flex:none}
+.sinal-explica{font-size:12px;color:var(--texto-secundario)}
 `;
 
 export const LIMITES_PADRAO = { contatos: 500, modelos: 20, caracteres: 640, intervaloMin: 1, intervaloMax: 600 };
@@ -198,6 +201,15 @@ const SCRIPT_COMUM = `
 const $ = (id) => document.getElementById(id);
 function esc(x){ return String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hora(iso){ return iso ? new Date(iso).toLocaleTimeString('pt-BR') : ''; }
+// Sinal do chip: 3 barras + texto. A cor vem do estado; o texto diz o estado (cor nunca é o único sinal).
+const COR_SINAL = { ONLINE: 'var(--sucesso)', INSTAVEL: 'var(--alerta-texto)', BLOQUEADO: 'var(--erro)', DESATIVADO: 'var(--texto-desabilitado)', SEM_CONEXAO: 'var(--texto-desabilitado)' };
+function sinalHtml(s){
+  if (!s) return '';
+  const cor = COR_SINAL[s.nivel] || 'var(--texto-desabilitado)';
+  const barras = [0,1,2].map(i => '<rect x="'+(1+i*6)+'" y="'+(10-i*4)+'" width="4" height="'+(4+i*4)+'" rx="1" style="fill:'+(i < s.barras ? cor : 'var(--borda-neutra)')+'"/>').join('');
+  const x = s.nivel === 'BLOQUEADO' || s.nivel === 'SEM_CONEXAO' ? '<path d="M13 1l4 4M17 1l-4 4" style="stroke:'+cor+'" stroke-width="2" stroke-linecap="round" fill="none"/>' : '';
+  return '<span class="sinal" title="'+esc(s.explicacao)+'"><svg width="20" height="16" viewBox="0 0 20 16" aria-hidden="true">'+barras+x+'</svg><span style="color:'+cor+'">'+esc(s.rotulo)+'</span></span>';
+}
 function dataHora(iso){ return iso ? new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''; }
 // Toda chamada passa por aqui: 401 = sessão acabou, volta para o login.
 async function api(url, opcoes){
@@ -422,7 +434,8 @@ async function carregar(){
   else aa.hidden = true;
   $('chips').innerHTML = p.chips.length ? p.chips.map(c => {
     const k = c.hoje; const est = estadoChip(c);
-    return '<article class="card chip-card"><div class="chip-topo"><div><b>'+esc(c.rotulo)+'</b><div class="chip-num">'+esc(c.telefone||'Número não informado')+'</div></div><span class="badge '+est[0]+'">'+est[1]+'</span></div>'
+    return '<article class="card chip-card"><div class="chip-topo"><div><b>'+esc(c.rotulo)+'</b><div class="chip-num">'+esc(c.telefone||'Número não informado')+'</div></div><div style="display:grid;gap:var(--space-1);justify-items:end">'+sinalHtml(c.sinal)+'<span class="badge '+est[0]+'">'+est[1]+'</span></div></div>'
+      + (c.sinal && c.sinal.nivel !== 'ONLINE' ? '<div class="sinal-explica">'+esc(c.sinal.explicacao)+'</div>' : '')
       + '<div class="linha-info"><span class="badge triagem">'+esc(c.operadora||'Operadora ?')+'</span><span>'+esc(c.aparelho)+' · Chip '+esc(c.simNumero)+'</span>'
       + (c.bateria!=null ? '<span>'+${JSON.stringify(icone('bateria', 16))}+c.bateria+'%</span>' : '')
       + '<span>Hoje '+k.total+' de '+c.cota+'</span>' + (c.cotaAtingida ? '<span class="badge alerta">Cota do dia atingida</span>' : '') + '</div>'
@@ -755,8 +768,9 @@ function aviso(tipo, html){ caixa('aviso', tipo, html); }
 function chipHtml(a, c){
   const bad = !c.ativo ? '<span class="badge neutro">Desativado</span>' : !c.presente ? '<span class="badge alerta">Chip não encontrado</span>' : '<span class="badge sucesso">Ativo</span>';
   return '<div class="chip-linha"><span><b style="color:var(--texto-primario)">Chip '+esc(c.simNumero)+'</b> · '+esc(c.telefone||'número não informado')+' <span class="badge triagem">'+esc(c.operadora||'Operadora ?')+'</span>'+(c.falhasSeguidas?' <span class="dica">'+c.falhasSeguidas+' falha(s) seguida(s)</span>':'')+'</span>'
-    + '<span class="acoes">'+bad+(ADMIN ? '<button class="botao secundario pequeno" type="button" data-chip="'+c.id+'" data-ativo="'+(c.ativo?'0':'1')+'">'+(c.ativo?'Desativar chip':'Ativar chip')+'</button>' : '')+'</span>'
+    + '<span class="acoes">'+sinalHtml(c.sinal)+bad+(ADMIN ? '<button class="botao secundario pequeno" type="button" data-chip="'+c.id+'" data-ativo="'+(c.ativo?'0':'1')+'">'+(c.ativo?'Desativar chip':'Ativar chip')+'</button>' : '')+'</span>'
     + '<span class="dica" style="flex-basis:100%">Hoje '+c.enviadosHoje+' de '+c.cotaEfetiva+(c.cotaDiaria == null ? ' (cota padrão)' : '')+(c.enviadosHoje >= c.cotaEfetiva ? ' · <span class="badge alerta">Cota do dia atingida</span>' : '')+'</span>'
+    + (c.sinal && c.sinal.nivel !== 'ONLINE' ? '<span class="sinal-explica" style="flex-basis:100%">'+esc(c.sinal.explicacao)+'</span>' : '')
     + (ADMIN ? '<span class="acoes" style="flex-basis:100%"><label class="dica" for="cota'+c.id+'">Cota diária</label><input id="cota'+c.id+'" type="number" min="0" step="1" inputmode="numeric" placeholder="Padrão" value="'+(c.cotaDiaria == null ? '' : c.cotaDiaria)+'" style="width:120px;height:40px"><button class="botao secundario pequeno" type="button" data-cota="'+c.id+'">Salvar cota</button></span>' : '')
     + '</div>';
 }
